@@ -64,7 +64,7 @@ conda config --remove channels <name of channel>
 ```
 Then add the required channels as stated before (in the correct order!)
 
-3. The requirements are provided in the "requirements.txt" that you downloaded form the Github page. Make a new environment and install all the packages:
+3. The requirements are provided in the **"requirements.txt"** that you downloaded form the Github page. Make a new environment and install all the packages:
 ```sh
 conda create --name sc_sn_RNA_seq_pipeline --file requirements.txt
 ```
@@ -188,6 +188,9 @@ cellranger_counts_options: "--include-introns=false"
 You can choose to include other options as shown [here](https://www.10xgenomics.com/support/software/cell-ranger/latest/tutorials/cr-tutorial-ct).
 
 Finally, CellRanger returns two count matrices (filtered and raw) and by the default option, the filtered matrix will be used for the pre-processing as this contains only cells (droplets) that have at least 500 transcripts (unique molecular identifiers - UMIs). The use of the raw matrix remains optional.
+
+
+
 
 
 
