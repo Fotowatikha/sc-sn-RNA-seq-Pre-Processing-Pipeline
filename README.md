@@ -21,3 +21,13 @@ wget "https://repo.anaconda.com/archive/Anaconda3-2024.02-1-Linux-x86_64.sh"
 ```sh
  bash "Anaconda/Miniconda3-<version>-Linux-x86_64.sh"
 ```
+
+3. Check if you installed correctly by calling the list of you installed packages and tools:
+```sh
+conda list 
+```
+
+4. (Optional) - If you have an older version, update the conda package manager to the latest version:
+```sh
+conda update -n base conda
+```
