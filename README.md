@@ -10,10 +10,10 @@ By consider the gene count matrices as the starting point after mapping reads to
 
 ## Download the pipeline files from GitHub
 
-You can either [download the files for the pipeline](https://repo.anaconda.com/archive/Anaconda3-2024.02-1-Linux-x86_64.sh) from my Github page or download it it by using the "Code button" on the Github page and import it using:
+You can either [download the files for the pipeline](https://github.com/Fotowatikha/sc-sn-RNA-seq-pre-processing/tree/main) from my Github page or download it it by using the "Code button" on the Github page and import it using:
 line below.
 ```sh
-git clone "https://github.com/Fotowatikha/sc-sn-RNA-seq-pre-processing.git"
+git clone https://github.com/Fotowatikha/sc-sn-RNA-seq-pre-processing.git
 ```
 
 ## Setup Conda environment
@@ -55,10 +55,15 @@ conda config --add channels conda-forge
 ```
 
 2. Note that the channels you added first end up in the bottom for lower priority. This is intentional!
-Make sure that the these channels are the only ones active. If you have any other channels, you should first remove them as stated below:
+Make sure that the these channels are the only ones active. If you have any other channels, you should first remove them as stated below. But first check channels you currently have:
+```sh
+conda config --show channels
+```
+If there channels we do not want, then remove them:
 ```sh
 conda config --remove channels <name of channel>
 ```
+Then add the required channels as stated before (in the correct order!)
 
 3. The requirements are provided in the "requirements.txt" that you downloaded form the Github page. Make a new environment and install all the packages:
 ```sh
