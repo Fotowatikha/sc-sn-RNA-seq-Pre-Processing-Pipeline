@@ -67,6 +67,6 @@ Then add the required channels as stated before (in the correct order!)
 
 3. The requirements are provided in the "requirements.txt" that you downloaded form the Github page. Make a new environment and install all the packages:
 ```sh
-conda create --name sc_sn_RNA_seq_pipeline --file requirements.txt
+conda create --name sc_sn_RNA_seq_pipeline --file ***requirements.txt***
 ```
 
