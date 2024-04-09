@@ -10,3 +10,4 @@ By consider the gene count matrices as the starting point after mapping reads to
 
 ## Setup Conda environment
 
+This pipeline is made to run on a conda enviroment con
