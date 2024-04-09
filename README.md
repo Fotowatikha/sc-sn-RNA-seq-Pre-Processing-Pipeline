@@ -153,6 +153,7 @@ reads_directory: "/path/to/DATA_FOLDER"
 ```
 
 3. With the assumption that you want to make a new reference profile, you have to go to the config.yaml and provide the path to your .gtf, .fasta (.fa), and specify that you want to run Cellranger mkgtf and Cellranger mkref. Examples are shown below:
+
 **Select Cellranger mkref**
 ```yaml
 make_new_ref: "yes" 
