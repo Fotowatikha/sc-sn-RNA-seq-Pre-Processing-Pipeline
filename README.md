@@ -19,5 +19,5 @@ wget "https://repo.anaconda.com/archive/Anaconda3-2024.02-1-Linux-x86_64.sh"
 
 2. Now install accordingly:
 ```sh
- bash "Anaconda/Miniconda3-<version>-Linux-x86_64.sh""
+ bash "Anaconda/Miniconda3-<version>-Linux-x86_64.sh"
 ```
