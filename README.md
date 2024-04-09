@@ -8,6 +8,8 @@ Now considering that the emergence of scRNA-seq techniques provides the framewor
 
 By consider the gene count matrices as the starting point after mapping reads to the reference, the major steps in this pre-processing is to: (1) Provide the user with quality control (QC) plots to gain insight on the overall quality of the cells prior to any extensive filtering; (2) Correcting the data from cell-free ambient RNA; (3) Extensive filtering to remove droplets that are unlikely to represent intact individual cells; (4) Removal of droplets that violate the assumption for containing one cell; (5) Provide the user with QC plots to gain insight on the quality of the data post-filtering.
 
+<img width="704" alt="Pipeline - Fig  1" src="https://github.com/Fotowatikha/sc-sn-RNA-seq-pre-processing/assets/157910396/d98fb83c-9fe7-4f96-9e55-42ac07274cbd">
+
 ## Download the pipeline files from GitHub
 
 You can either [download the files for the pipeline](https://github.com/Fotowatikha/sc-sn-RNA-seq-pre-processing/tree/main) from my Github page or download it it by using the "Code button" on the Github page and import it using Filezilla or use the line below if you have Git installed:
