@@ -75,7 +75,7 @@ Then add the required channels as stated before (in the correct order!)
 conda create --name sc_sn_RNA_seq_pipeline --file requirements.txt
 ```
 
-## Procedure on how to run the pipeline
+## Procedure on how to run the full pipeline
 
 **Download the latest CellRanger software:**
 
@@ -282,3 +282,38 @@ skip.DoubletFinder: "yes"
 
 CPU.cores: ""
 ```
+
+## Procedure on how only run QC and Pre-Processing
+
+You can also choose to download counts matrices from the open-source databases (depending on your reseach). In such case, you do not need to run the full pipeline. Instead you can only run the QC and Pre-Processing to clean up the data and assess the quality.
+If that is something that you want to do, then follow the steps below.
+
+**1.** Un-select any of the parameters related to CellRanger from the config.yaml (**cellranger_directory, out_directory, reads_directory, transcriptome_directory, make_new_ref, edit_gtf, gtf_directory, fasta_directory**).
+
+**2.** Now make sure that the files you downloaded from the database contain **barcodes.tsv.gz, features.tsv.gz, matrix.mtx.gz**. These are essentially the files we need to generate a counts matrix. You must also know beforehand if they raw counts of filtered (or both). Now make a new folder using `mkdir SAMPLE1`. Inside the **SAMPLE1** folder make another folder containing the characters **raw** or **filtered** (e.g. `raw_matrix_files`, `matrix_raw_files`, `love_raw_pizza`, `blarawvla`, as long as **raw** or **filtered** is in there). THEY MUST CONTAIN THE THESE CHARACTERS FOR THE PIPELINE TO DETECT IF THEY BELONG TO A ROW OF FILTERED COUNTS MATRIX. Not put the downloaded **barcodes.tsv.gz, features.tsv.gz, matrix.mtx.gz** files in your raw or filtered folders and put raw or filtered folders in your **SAMPLE1** folder. It should look like this: `/path/to/SAMPLE1/raw_matrix`. Your matrix folders is allowed to be located anywhere inside the sample folder (nested folders are also allowed, go crazy, the code will find it!). You can also have multiple files if you want to process them all together. An example of that is shown below:
+
+**Example 1:**
+```text
+DATA_FOLDER
+├── SAMPLE_1
+│   ├──  raw_matrix-folder
+│   └──  filtered_matrix-folder
+└── SAMPLE_2
+│   ├──  raw_matrix-folder
+└── SAMPLE_3
+│   ├──  filtered_matrix-folder
+```
+
+**3.** Now with everything ready, go to the config.yaml and specify the path to your DATA_FOLDER as shown in the line below. With the **example 1** shown above, the path to your DATA_FOLDER will detect three samples. Each sample with different count matrices (some with filtered, some only raw and some have both). 
+```yaml
+sample_names: "/path/to/DATA_FOLDER" 
+```
+
+**4.** Considering that you do not run the full pipeline, it is important to specify the name of your specie so that the pipeline can get the correct MT genes. Go to the config.yaml choose your specie as shown below:
+```yaml
+animal: "Sus scrofa"
+```
+You are still allowed to specify a path to a FASTA file. In such case, the name of your specie will be correctly parsed. THE PIPELINE DOES NOT SUPPORT MULTIPLE SPECIES AT THE SAME TIME, SO MAKE SURE YOUR SAMPLES ARE FROM THE SAME SPECIES!
+
+**5.** Change the parameters related to the QC and Pre-Processing if have to and you are all set!
+
