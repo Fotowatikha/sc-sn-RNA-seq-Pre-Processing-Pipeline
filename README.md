@@ -150,7 +150,7 @@ SAMPLE_1_2_READS
 ├── *sample2_S1_L001_I1.fastq.gz*
 ├── **sample3_S1_L001_R1.fastq.gz**
 ├── **sample3_S1_L001_RR.fastq.gz**
-├── **sample3_S1_L001_I1.fastq.gz**
+└── **sample3_S1_L001_I1.fastq.gz**
   ```
 
 
@@ -511,4 +511,46 @@ OUT_DIRECTORY
 │           └ raw_feature_bc_matrix
 │   
 └── <SPECIE_NAME>_mkref_transcriptome
+```
+
+## Running the Snakefile
+
+**1.** With your Conda environment set, you should run:
+```sh
+conda activate sc_sn_RNA_seq_pipeline 
+```
+
+**2.** Now with the you parameters set in the config.yaml, it is time to do a dry-run to check if is correctly. This is useful to test if the workflow is defined properly. You can do dry run from the pipeline folder by running the line as shown below:
+```sh
+snakemake --configfile config.yaml -np
+```
+If you want to dry-run outside the pipeline folder, then run:
+```sh
+snakemake --snakefile /path/to/pipeline-folder/Snakefile --configfile /path/to/pipeline-folder/config.yaml -np
+```
+
+When everything is setup correctly you get too see something as shown in the image below. Keep in mind that the order of the jobs are not correct, but they do run in the correct order! When you do a dry run, you scroll down further and see which job are running first on the command line.
+
+<img width="794" alt="Scherm­afbeelding 2024-04-10 om 11 17 40" src="https://github.com/Fotowatikha/sn-sn-RNA-seq-Pre-Processing-Pipeline/assets/157910396/4305a383-cbda-482e-bd89-e92fd5a770c6">
+
+**Running the Snakefile on your local node**
+
+**1.** If have one small sample (reads) and want to run the full pipeline on yout local node, it will usually not take more than an hour with moderate resources. The only thing you have to do adjust the resources for **Cellranger count** by going to the config.yaml and adding the following:
+```yaml
+cellranger_counts_options: "--localcores=8 --localmem=32"
+```
+These should be enough resources without slowing down the node.
+
+**2.** Now you can run the pipeline (form the pipeline folder) with:
+```sh
+nohup snakemake --configfile config.yaml --cores 8 &
+```
+You can also run it from outside the pipeline folder by:
+```sh
+nohup snakemake --snakefile /path/to/pipeline-folder/Snakefile --configfile /path/to/pipeline-folder/config.yaml --cores 8 &
+```
+
+Running it with **nohup &** will generate a nohub log.file and ensures that Snakemake is running in an separate session. You also follow the session live by:
+```sh
+cat nohup
 ```
