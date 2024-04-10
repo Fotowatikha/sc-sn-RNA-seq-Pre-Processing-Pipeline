@@ -581,3 +581,19 @@ The logs will go to the **SLURM_LOGS** folder.
 **Keep in mind that i have not yet checked if the method above works when submitting a job to the cluster. It appears that in Snakemake v8 the --profile option is outdated and jobs have to be submitted by additional plugins 'snakemake-executor-plugin-cluster-generic' which is already installed in your Conda enviroment. If you are already familiar with Snakemake try to submit it in a way you are already used to. If it does not work, consider downgrading to Snakemake v7 or read the [change logs of v8](https://snakemake.readthedocs.io/en/stable/getting_started/migration.html) and try to implement the plugin that is required to submit it as a job**
 
 ## Example of QC and Pre-processing html output
+
+After a successful run, you are provided by a html file that contains the results of your QC (as explained before). I have provided an example in the EXAMPLE_RESULTS folder (on Github). This should give you an idea on how the results look like. Carefully look at the graphs and read the descriptions provided for each result.
+
+## Download some data test the pipeline
+
+If you want you can download single cell human PBMC data to run the pipeline in a small scale to learn how everything works:
+
+```sh
+wget https://cf.10xgenomics.com/samples/cell-exp/3.0.0/pbmc_1k_v3/pbmc_1k_v3_fastqs.tar
+```
+And unzip them:
+```sh
+wget tar -xvf pbmc_1k_v3_fastqs.tar
+```
+
+You can delete the files from one of the lanes (L001 or L002) to make things run even faster. You can use these data to run things on the local cluster.
