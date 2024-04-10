@@ -581,5 +581,3 @@ The logs will go to the **SLURM_LOGS** folder.
 **Keep in mind that i have not yet checked if the method above works when submitting a job to the cluster. It appears that in Snakemake v8 the --profile option is outdated and jobs have to be submitted by additional plugins 'snakemake-executor-plugin-cluster-generic' which is already installed in your Conda enviroment. If you are already familiar with Snakemake try to submit it in a way you are already used to. If it does not work, consider downgrading to Snakemake v7 or read the [change logs of v8](https://snakemake.readthedocs.io/en/stable/getting_started/migration.html) and try to implement the plugin that is required to submit it as a job**
 
 ## Example of QC and Pre-processing html output
-
-After a successful run, you are provided by a html file that contains the results of your QC (as explained before). Use this [link](file:///Users/hamid/Documents/QC-Preprocessing_pbmc_1k_v7_SAMP_1.html) to see an example of how the results look like. Carefully look at the graphs and read the descriptions provided for each result.
