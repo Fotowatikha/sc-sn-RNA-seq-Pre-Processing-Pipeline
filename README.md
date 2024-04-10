@@ -25,7 +25,7 @@ git clone https://github.com/Fotowatikha/sc-sn-RNA-seq-pre-processing.git
 
 This pipeline is made to run on a Conda environment containing all the crucial packages for Python, Snakemake and R. Here, i assume that you already have Anaconda or Miniconda installed. In case you don’t have it yet, then follow the steps below:
 
-**Anaconda/Miniconda3 installation**
+**Anaconda/Miniconda3 installation:**
 
 **1.** [Download the Anaconda installer form the website](https://repo.anaconda.com/archive/Anaconda3-2024.02-1-Linux-x86_64.sh) or get the latest version using the line below.
 ```sh
@@ -47,7 +47,7 @@ conda list
 conda update -n base conda
 ```
 
-**Setting up the environment for the pipeline**
+**Setting up the environment for the pipeline:**
 
 **1.** Now with Conda installed and update it is time to setup the environment that is required for the pipeline.
 To install the essential packages and tools, it is important to set your Conda channels in the following order:
@@ -77,7 +77,7 @@ conda create --name sc_sn_RNA_seq_pipeline --file requirements.txt
 
 ## Procedure on how to run the pipeline
 
-**Download the latest CellRanger**
+**Download the latest CellRanger:**
 
 At first, we need the Cellranger tools provided by 10X genomics. You can [download](https://www.10xgenomics.com/support/software/cell-ranger/downloads) and import it with FileZilla or use the line below:
 ```sh
@@ -89,7 +89,7 @@ gzip -d cellranger-8.0.0.tar.gz
 ```
 The files will no go to a new directory names **cellranger-8.0.0**, that contains all the cellranger dependencies.
 
-**Running Cellranger**
+**Running Cellranger:**
 
 The pipeline provides the option to skip any of the Cellranger tools if you wish to only carry out Quality-Control and Pre-Processing with the assumption that you already have count matrices downloaded from some data base (e.g. SRA) (more on this late...). For now, we will assume that you want to run the full pipeline that includes **1.** Cellranger mkgtf, **2.** Cellranger mkref, **3.** Cellranger count and **4.** QC & Pre-processing.
 
@@ -165,7 +165,7 @@ reads_directory: "/path/to/DATA_FOLDER"
 ```yaml
 out_directory: "/path/to/output-folder" 
 ```
-**DO NOT ATTEMPT TO RUN THE PIPELINE WITHIN THE out_directory OR reads_directory:** 
+**DO NOT ATTEMPT TO RUN THE PIPELINE WITHIN THE out_directory OR reads_directory** 
 
 **4.** With the assumption that you want to make a new reference profile, you have to go to the config.yaml and provide the path to your .gtf, .fasta (.fa), and specify that you want to run Cellranger mkgtf and Cellranger mkref. If you do not want to edit your .gtf file, then you can leave out `edit_gtf` Examples are shown below:
 **Select Cellranger mkref**
