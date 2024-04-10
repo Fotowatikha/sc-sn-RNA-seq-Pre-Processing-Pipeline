@@ -87,18 +87,18 @@ Unzip it using:
 ```sh
 gzip -d cellranger-8.0.0.tar.gz
 ```
-The files will no go to a new directory names **cellranger-8.0.0**, that contains all the cellranger dependencies.
+The files will no go to a new directory named **cellranger-8.0.0**, that contains all the CellRanger dependencies.
 
 **Running Cellranger:**
 
 The pipeline provides the option to skip any of the Cellranger tools if you wish to only carry out Quality-Control and Pre-Processing with the assumption that you already have count matrices downloaded from some data base (e.g. SRA) (more on this late...). For now, we will assume that you want to run the full pipeline that includes **1.** Cellranger mkgtf, **2.** Cellranger mkref, **3.** Cellranger count and **4.** QC & Pre-processing.
 
-**1.** Now go the pipeline directory (that you previously downloaded form the Github page) and open the provided **config.yaml** with your favorite text editor (e.g. Geany or Nano, or whatever you like). Now provide the full path to the installed Cellranger directory in the config file as shown below:
+**1.** Now go the pipeline directory (that you previously downloaded form the Github page) and open the provided **config.yaml** with your favorite text editor (e.g. Geany or Nano, or whatever you like). Provide the full path to the installed Cellranger directory in the config file as shown below:
 ```yaml
 cellranger_directory: "/path/to/cellranger-8.0.0" 
 ```
 
-For CellRanger to work, it is expected for the user to provide a pair of FASTQ files (Read 1 - Cell barcode/UMI and Read 2 - Insert, Index files) and a reference gene annotation from any organism of interest. If a reference annotation is not available, the pipeline enables the creation of a custom reference by using a provided reference genome sequence (FASTA file) and a gene annotations (GTF file) that is compatible with the RNA-seq aligner, STAR. You can download these from Ensembl.
+For CellRanger to work, it is expected for the users to provides a pair of FASTQ files (Read 1 - Cell barcode/UMI and Read 2 - Insert, Index files) and a reference gene annotation from any organism of interest. If a reference annotation is not available, the pipeline enables the creation of a custom reference by using a provided reference genome sequence (FASTA file) and a gene annotations (GTF file) that is compatible with the RNA-seq aligner, STAR. You can download these from [Ensembl](https://useast.ensembl.org/index.html).
 
 This pipeline is made to compatible with multiple samples in multiple directories. This means that you may have the reads from multiple samples in the same folder. Additionally, you can also specify a the path to a parent-directory that contains multiple samples (folders). 
 
@@ -165,7 +165,7 @@ reads_directory: "/path/to/DATA_FOLDER"
 ```yaml
 out_directory: "/path/to/output-folder" 
 ```
-**DO NOT ATTEMPT TO RUN THE PIPELINE WITHIN THE out_directory OR reads_directory** 
+**DO NOT ATTEMPT TO RUN THE PIPELINE WITHIN THE out_directory OR reads_directory. Due to a bug in "CellRanger count" some temporary folders will not be deleted and result in a RuntimeError** 
 
 **4.** With the assumption that you want to make a new reference profile, you have to go to the config.yaml and provide the path to your .gtf, .fasta (.fa), and specify that you want to run Cellranger mkgtf and Cellranger mkref. If you do not want to edit your .gtf file, then you can leave out `edit_gtf` Examples are shown below:
 **Select Cellranger mkref**
@@ -201,28 +201,5 @@ This is an addition to **Cellranger mkgtf** that select by `edit_gtf:` parameter
 cellranger_counts_options: "--include-introns=false"
 ```
 You can choose to include other options as shown [here](https://www.10xgenomics.com/support/software/cell-ranger/latest/tutorials/cr-tutorial-ct).
-
-
-
-
-Finally, CellRanger returns two count matrices (filtered_feature_bc_matrix and raw_feature_bc_matrix) and by the default option, the filtered matrix will be used for the pre-processing as this contains only cells (droplets) that have at least 500 transcripts (unique molecular identifiers - UMIs). The use of the raw matrix remains optional.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
