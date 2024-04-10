@@ -91,16 +91,18 @@ The files will no go to a new directory names **cellranger-8.0.0**, that contain
 
 **Running Cellranger**
 
-The pipeline provides the option to skip any of the Cellranger tools if you wish to only carry out Quality-Control and Pre-Processing with the assumption that you already count matrices downloaded from some data base (e.g. SRA) (more on this late...). For now, we will assume that you want to run the full pipeline that includes **1.** Cellranger mkgtf, **2.** Cellranger mkref, **3.** Cellranger count and **4.** QC & Pre-processing.
+The pipeline provides the option to skip any of the Cellranger tools if you wish to only carry out Quality-Control and Pre-Processing with the assumption that you already have count matrices downloaded from some data base (e.g. SRA) (more on this late...). For now, we will assume that you want to run the full pipeline that includes **1.** Cellranger mkgtf, **2.** Cellranger mkref, **3.** Cellranger count and **4.** QC & Pre-processing.
 
-1. Now go the pipeline directory (that you previously downloaded form the Github page) and open the provided **config.yaml** with your favorite text editor (e.g. Geany or Nano, or whatever you like). Now prove the full path to the installed Cellranger directory in config file as shown below:
+1. Now go the pipeline directory (that you previously downloaded form the Github page) and open the provided **config.yaml** with your favorite text editor (e.g. Geany or Nano, or whatever you like). Now provide the full path to the installed Cellranger directory in the config file as shown below:
 ```yaml
 cellranger_directory: "/path/to/cellranger-8.0.0" 
 ```
 
-The first step of the pre-processing includes the use of the CellRanger shell utility that is specifically made by 10X Genomics to handle datasets from a wide range of single-cell technologies. Here, it is expected for the user to provide a pair of FASTQ files (Read 1 - Cell barcode/UMI and Read 2 - Insert, and some index files) and a reference gene annotation from any organism of interest. If a reference annotation is not available, the pipeline enables the creation of a custom reference by using a provided reference genome sequence (FASTA file) and a gene annotations (GTF file) that is compatible with the RNA-seq aligner, STAR.
+For CellRanger to work, it is expected for the user to provide a pair of FASTQ files (Read 1 - Cell barcode/UMI and Read 2 - Insert, Index files) and a reference gene annotation from any organism of interest. If a reference annotation is not available, the pipeline enables the creation of a custom reference by using a provided reference genome sequence (FASTA file) and a gene annotations (GTF file) that is compatible with the RNA-seq aligner, STAR. You can download these from Ensembl.
 
-This pipeline is made to compatible with multiple samples in multiple directories. This means that may have the reads from multiple samples in the same folder. Additionally, you can also specify a the path to a folder that contains reads (folders) of multiple samples (or both). The supported examples are shown below:
+This pipeline is made to compatible with multiple samples in multiple directories. This means that you may have the reads from multiple samples in the same folder. Additionally, you can also specify a the path to a parent-directory that contains multiple samples (folders). 
+
+The supported examples are shown below:
 
 **Example 1:**
 ```text
@@ -151,14 +153,20 @@ DATA_FOLDER
 │   └──  sample4_S1_L001_I1.fastq.gz
 ```
 
-Even tough the examples above show that you can run many samples at the same time, keep in mind this also comes at a hefty computation cost. I general, it is more convenient to run one sample at a time (except technical replicates)
+Even tough the examples above show that you can run many samples at the same time, keep in mind this also comes at a hefty computation cost. In general, it is more convenient to run one sample at a time (except technical replicates)
 
-2. Now go to config.yaml and provide the the path your reads. In Example 1 and 3 (shown above) the path to your reads would look like `/path/to/DATA_FOLDER`, while in example 1 you should include the full path, including the folder where the reads are located `/path/to/DATA_FOLDER/SAMPLE_1_2_READS`. 
+2. Now go to config.yaml and provide the path your reads (FASTQs). In Example 1 and 3 (shown above) the path to your reads would look like `/path/to/DATA_FOLDER`. In example 2 you should include the full path, including the folder where the reads are located: `/path/to/DATA_FOLDER/SAMPLE_1_2_READS`. 
 ```yaml
 reads_directory: "/path/to/DATA_FOLDER" 
 ```
 
-3. With the assumption that you want to make a new reference profile, you have to go to the config.yaml and provide the path to your .gtf, .fasta (.fa), and specify that you want to run Cellranger mkgtf and Cellranger mkref. Examples are shown below:
+3. Now select a directory where you want your output files to be generated. By selecting such directory, all your results from multiple samples will be stored here, including all raw gene counts matrices, corrected gene counts matrices and HTML outputs (containing images for QC). Go to the config.yaml and provide the an outs directory. If you do not provide such directorty, your current working directory will be automatically selected (not recommended, unless you run it from the pipeline folder where the Snakefile is located). 
+```yaml
+out_directory: "/path/to/output-folder" 
+```
+**DO NOT ATTEMPT TO RUN THE PIPELINE WITHIN THE out_directory OR reads_directory:** 
+
+4. With the assumption that you want to make a new reference profile, you have to go to the config.yaml and provide the path to your .gtf, .fasta (.fa), and specify that you want to run Cellranger mkgtf and Cellranger mkref. If you do not want to edit your .gtf file, then you can leave out `edit_gtf` Examples are shown below:
 **Select Cellranger mkref**
 ```yaml
 make_new_ref: "yes" 
@@ -175,42 +183,21 @@ gtf_directory: "/path/to/gtf-folder"
 ```yaml
 fasta_directory: "/path/to/fasta-folder" 
 ```
-The reference transcriptome created in this process can be used in the future for now samples. In such case leave out `make_new_ref, edit_gtf, gtf_directory, fasta_directory` in config.yaml file and only prove the path to your reads and the path the your previous reference transcriptome:
+The reference transcriptome created in this process can be used in the future for new samples (form the same specie of course...). In such case leave out `make_new_ref, edit_gtf, gtf_directory, fasta_directory` in config.yaml file and only prove the path to your reads and the path the your previous reference transcriptome:
 ```yaml
 transcriptome_directory: "/path/to/transcriptome-folder:" 
 ```
 
-Since the expression assay captures transcripts by the poly-A and 3' ends, most reads will align towards that region, including the UTR. If the UTR sequence between (multiple) transcripts happens to be similar, the gene counts at an unwanted locus could become inflated, while missing the true counts for the relevant genes. Taking into account that GTF files often contain entries for non-polyA transcripts, there is a minor chance that these transcripts (and its UTRs) may overlap with actual protein-coding genes. Thus, by default, the GTF file will be manipulated to only include genes that have polyA entries. However, the option is provided to include all genes, long non-coding RNAs, antisense sequences and more... 
+5. Since the expression assay captures transcripts by the poly-A and 3' ends, most reads will align towards that region, including the UTR. If the UTR sequence between (multiple) transcripts happens to be similar, the gene counts at an unwanted locus could become inflated, while missing the true counts for the relevant genes. Taking into account that GTF files often contain entries for non-polyA transcripts, there is a minor chance that these transcripts (and its UTRs) may overlap with actual protein-coding genes. Thus, by default, the GTF file will be manipulated to only include genes that have polyA entries. However, the option is provided to include all genes, long non-coding RNAs, antisense sequences and more... 
 To ensure that we only include genes that contain polyA entries (and protein coding genes), by default in config.yaml, we set this parameter to:
 ```yaml
 gene_biotype: "gene_biotype:protein_coding"
 ```
-This is an addition to the `edit_gtf:` parameter and you can leave this out change it according to your need. More options are provided [here](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/inputs/cr-3p-references).
+This is an addition to **Cellranger mkgtf** that select by `edit_gtf:` parameter. You can also choose to leave this out or change it according to your need. More options are provided [here](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/inputs/cr-3p-references).
 
-For the STAR read mapping, we include alignments to intronic regions as this greatly improves the number of detected genes in single-nuclei data (due to abundant pre-mRNA) and could potentially improve the detection of cell populations that have low expression of genes (e.g. neutrophils and mast cells). To if you do not want to include intronic reads, then you can go to the config.yaml and adjust the following:
+6. For the STAR read mapping, we include alignments to intronic regions as this greatly improves the number of detected genes in single-nuclei data (due to abundant pre-mRNA) and could potentially improve the detection of cell populations that have low expression of genes (e.g. neutrophils and mast cells). If you do not want to include intronic reads, then you can go to the config.yaml and adjust the following:
 ```yaml
 cellranger_counts_options: "--include-introns=false"
 ```
 You can choose to include other options as shown [here](https://www.10xgenomics.com/support/software/cell-ranger/latest/tutorials/cr-tutorial-ct).
-
-Finally, CellRanger returns two count matrices (filtered and raw) and by the default option, the filtered matrix will be used for the pre-processing as this contains only cells (droplets) that have at least 500 transcripts (unique molecular identifiers - UMIs). The use of the raw matrix remains optional.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
