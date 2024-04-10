@@ -109,35 +109,35 @@ The supported examples are shown below:
 DATA_FOLDER
 ├── SAMPLE_1_READS
 │   ├──  sample1_S1_L001_R1.fastq.gz
-│   └──  sample1_S1_L001_RR.fastq.gz
-│   └──  sample1_S1_L001_I1.fastq.gz
+│   ├──  sample1_S1_L001_RR.fastq.gz
+│   ├──  sample1_S1_L001_I1.fastq.gz
 └── SAMPLE_2_READS
 │   ├──  sample2_S1_L001_R1.fastq.gz
-│   └──  sampl2e_S1_L001_RR.fastq.gz
-│   └──  sample2_S1_L001_I1.fastq.gz
+│   ├──  sampl2e_S1_L001_RR.fastq.gz
+│   ├──  sample2_S1_L001_I1.fastq.gz
 └── SAMPLE_3_READS
 │   ├──  sample3_S1_L001_R1.fastq.gz
-│   └──  sampl23_S1_L001_RR.fastq.gz
-│   └──  sample3_S1_L001_I1.fastq.gz
+│   ├──  sampl23_S1_L001_RR.fastq.gz
+│   ├──  sample3_S1_L001_I1.fastq.gz
 ```
 **Example 2:**
 ```text
 DATA_FOLDER
 ├── SAMPLE_1_READS
 │   ├──  sample1_S1_L001_R1.fastq.gz
-│   └──  sample1_S1_L001_RR.fastq.gz
-│   └──  sample1_S1_L001_I1.fastq.gz
+│   ├──  sample1_S1_L001_RR.fastq.gz
+│   ├──  sample1_S1_L001_I1.fastq.gz
 └── SAMPLE_2_READS
 │   ├──  sample2_S1_L001_R1.fastq.gz
-│   └──  sampl2e_S1_L001_RR.fastq.gz
-│   └──  sample2_S1_L001_I1.fastq.gz
+│   ├──  sampl2e_S1_L001_RR.fastq.gz
+│   ├──  sample2_S1_L001_I1.fastq.gz
 └── SAMPLE_3_READS
 │   ├──  sample3_S1_L001_R1.fastq.gz
-│   └──  sample3_S1_L001_RR.fastq.gz
-│   └──  sample3_S1_L001_I1.fastq.gz
+│   ├──  sample3_S1_L001_RR.fastq.gz
+│   ├──  sample3_S1_L001_I1.fastq.gz
 │   ├──  *sample4_S1_L001_R1.fastq.gz*
-│   └──  *sample4_S1_L001_RR.fastq.gz*
-│   └──  *sample4_S1_L001_I1.fastq.gz*
+│   ├──  *sample4_S1_L001_RR.fastq.gz*
+│   ├──  *sample4_S1_L001_I1.fastq.gz*
 ```
 **Example 3:**
 ```text
@@ -502,13 +502,19 @@ If you only run the QC and Pre-Processing part of the pipeline, the output files
 OUT_DIRECTORY
 ├── SAMPLE_1
 │   ├──HTML_outs│COUNTS-QC_SAMPLE_1.html
-│               │QC-Preprocessing_SAMPLE_1.html
-│                
+│   │           │QC-Preprocessing_SAMPLE_1.html
+│   │           
 │   └──new-outs│counts│FilteredCounts
-│                     │SoupCorrectedCounts
-│   
+│   │                 │SoupCorrectedCounts
+│   │
 │   └──outs│filtered_feature_bc_matrix
 │          │raw_feature_bc_matrix
 │   
 ├── <SPECIE_NAME>_mkref_transcriptome
 ```
+
+
+
+
+
+
