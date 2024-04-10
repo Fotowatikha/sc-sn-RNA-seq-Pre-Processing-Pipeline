@@ -248,6 +248,37 @@ You can also choose to show the most-affected genes and their level of correctio
 ```yaml
 n.highly_affected.genes: ""
 ```
-Additionally, we over the option to also include your genes of interest. To do, you must go to the pipeline folder and located the gene.txt file inside the markers folder (`pipeline/markers/gene.txt`). Open the **gene.txt** with your favorite text editor and put in the name of your genes of interest as shown in the image below (make sure to save it accordingly in the same folder):
+Additionally, we over the option to also include your genes of interest. To do, you must go to the pipeline folder and located the gene.txt file inside the markers folder (`pipeline/markers/gene.txt`). Open the **gene.txt** with your favorite text editor and put in the name of your genes of interest as shown in the image below (make sure to save it accordingly in the same folder). Make sure the gene names are the same as found in your counts matrix. If the names are not the same, you will get a runtime errro!
 
 <img width="582" alt="Scherm­afbeelding 2024-04-10 om 06 32 54" src="https://github.com/Fotowatikha/sn-sn-RNA-seq-Pre-Processing-Pipeline/assets/157910396/fdaa4d6a-559b-4f4c-b111-bb5c3f2b53fd">
+
+**5.** During the extensive filtering, by default, we automatically filter out cells with a percentage of MT reads above 10%, with gene and transcript counts below the 2% quantile as a lower limit. No filtering is applied on the higher limit as these cells could represent doublets that we want to classify by DoubletFinder instead of removing them by force. However, if you have prior knowledge on the dataset, filtering can also be applied by user-defined cutoff values for the number of genes, transcripts and percentage of MT reads. Additionally, you may also adjust the upper and lower quantiles for the parameters mentioned above. It is important to consider that by removing cells in the upper limit by user-defined cutoff values or quantiles, there is a good chance that true doublets are being removed before identified in an algorithmic fashion. You can adjust the these parameters in the config.yaml as shown below:
+```yaml
+# By numbers
+
+featureLOW: ""
+countLOW: ""
+featureHIGH: ""
+countHIGH: ""
+
+# By quantile (between 0-100&):
+
+feature.quantile.low: "" 
+UMI.quantile.low: ""
+feature.quantile.high: ""
+UMI.quantile.high: ""
+
+# MT percentage (between 0-100%):
+
+mt.Con: ""
+```
+Note that we have protected the parameters above against nonsensical values... For instance, you cannot filter out more genes than the maximum number of genes in your data. If you do so, the filtering based on your given cutoff value will be skipped. Likewise, you cannot filter a given MT percentage above the maximum in your data. In such case, the parameter will change to default of 10%. The same is true if the lower quantiles are larger then upper the quantiles during filtering. In such case, the quantiles will be set to default.
+Any mistakes in these steps will not raise warnings and the code will continue with default parameters, so be careful (or get ready for some unexpected results!).
+
+**5.** The final step in the includes filtering out doublets (multiplets) from your data. If you wish to skip this procedure, then go to the config.yaml and change to parameters as shown below. Even if you choose to skip Doubletfinder, we will still run it to show you the quality of the data, but the true doublets will not be filtered out from the counts matrix.
+You can also change the number of CPU cores used during the doublet detection. Since the QC and Pre-Processing step runs on the local cluster (even if you submit it as a job), the number of cores are set to 1 to ensure that you do not compete for resources. You can choose anything between 1-8. We have set to maximum to 8 so that you do not slow down the cluster for your colleagues.
+```yaml
+skip.DoubletFinder: "yes"
+
+CPU.cores: ""
+```
