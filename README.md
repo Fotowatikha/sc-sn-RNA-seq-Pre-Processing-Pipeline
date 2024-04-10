@@ -582,7 +582,7 @@ The logs will go to the **SLURM_LOGS** folder.
 
 ## Example of QC and Pre-processing html output
 
-After a successful run, you are provided by a html file that contains the results of your QC (as explained before). I have provided an example in the EXAMPLE_RESULTS folder (on Github). This should give you an idea on how the results look like. Carefully look at the graphs and read the descriptions provided for each result.
+After a successful run, you are provided by a html file that contains the results of your QC (as explained before). I have provided an example in the **EXAMPLE_RESULTS** folder (on Github). This should give you an idea on how the results look like. Carefully look at the graphs and read the descriptions provided for each result.
 
 ## Download some data test the pipeline
 
