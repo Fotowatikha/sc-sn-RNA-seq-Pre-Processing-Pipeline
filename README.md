@@ -161,7 +161,7 @@ Even tough the examples above show that you can run many samples at the same tim
 reads_directory: "/path/to/DATA_FOLDER" 
 ```
 
-**3.** Now select a directory where you want your output files to be generated. By selecting such directory, all your results from multiple samples will be stored here, including all raw gene counts matrices, corrected gene counts matrices and HTML outputs (containing images for QC). Go to the config.yaml and provide the an outs directory. If you do not provide such directorty, your current working directory will be automatically selected (not recommended, unless you run it from the pipeline folder where the Snakefile is located). 
+**3.** Now select a directory where you want your output files to be generated. By selecting such directory, all your results from multiple samples will be stored here, including all raw gene counts matrices, corrected gene counts matrices and HTML outputs (containing images for QC). Go to the config.yaml and provide the an outs directory. If you do not provide such directorty, your current working directory will be automatically selected (not recommended, unless you run it from the pipeline folder where the Snakefile is located):
 ```yaml
 out_directory: "/path/to/output-folder" 
 ```
