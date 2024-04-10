@@ -520,7 +520,7 @@ OUT_DIRECTORY
 conda activate sc_sn_RNA_seq_pipeline 
 ```
 
-**2.** Now with the you parameters set in the config.yaml, it is time to do a dry-run to check if is correctly. This is useful to test if the workflow is defined properly. You can do dry run from the pipeline folder by running the line as shown below:
+**2.** Now with the you parameters set in the config.yaml, it is time to do a dry-run to check if everything is correctly. This is useful to test if the workflow is defined properly. You can do dry run from the pipeline folder by running the line as shown below:
 ```sh
 snakemake --configfile config.yaml -np
 ```
@@ -533,9 +533,10 @@ When everything is setup correctly you get too see something as shown in the ima
 
 <img width="794" alt="Scherm­afbeelding 2024-04-10 om 11 17 40" src="https://github.com/Fotowatikha/sn-sn-RNA-seq-Pre-Processing-Pipeline/assets/157910396/4305a383-cbda-482e-bd89-e92fd5a770c6">
 
+
 **Running the Snakefile on your local node**
 
-**1.** If have one small sample (reads) and want to run the full pipeline on yout local node, it will usually not take more than an hour with moderate resources. The only thing you have to do adjust the resources for **Cellranger count** by going to the config.yaml and adding the following:
+**1.** If have one small sample (reads) and want to run the full pipeline on yout local node, it will usually not take more than an hour with moderate resources. The only thing you have to do adjust are the resources for **Cellranger count** by going to the config.yaml and adding the following:
 ```yaml
 cellranger_counts_options: "--localcores=8 --localmem=32"
 ```
@@ -549,8 +550,32 @@ You can also run it from outside the pipeline folder by:
 ```sh
 nohup snakemake --snakefile /path/to/pipeline-folder/Snakefile --configfile /path/to/pipeline-folder/config.yaml --cores 8 &
 ```
-
-Running it with **nohup &** will generate a nohub log.file and ensures that Snakemake is running in an separate session. You also follow the session live by:
+Running it with **nohup &** will generate a nohub log.file and ensures that Snakemake is running in an separate session. You can also follow the session live by:
 ```sh
 cat nohup
 ```
+By default Snakemake considers a waiting time of 5 seconds to check the output file after a rule finishes the job. Due to system latency, if it takes more than 5 seconds for the output to be generated, Snakemake will fail! If you suspect slow storage on your local node, the consider increasing the waiting to 120 seconds as shown below:
+```sh
+nohup snakemake --configfile config.yaml --cores 8 -w 120 &
+```
+
+**Submitting the Snakefile to the cluster (not yet tested)**
+
+In order to submit it as a job to the cluster, you most first locate the **SLURM** folder inside the pipeline folder and adjust the config.yaml with correct number of resources  and jobs. 
+
+```yaml
+cluster: "sbatch --time 24:00:00 --mem 64000 --cpus-per-task 16 --job-name={rule} --output=SLURM_LOGS/{rule}_%j.out --error=SLURM_LOGS/{rule}_%j.err"
+
+jobs: 25  # generally a sensible default is slightly below the maximum number of jobs you are allowed to have submitted at a time on your system.
+use-conda: true
+```
+
+Then inside the pipeline folder, run:
+
+```sh
+nohup snakemake --profile SLURM --configfile config.yaml &
+```
+
+The logs will go to the **SLURM_LOGS** folder.
+
+**Keep in mind that i have not yet checked if the method above works when submitting a job to the cluster. It appears that in Snakemake v8 the --profile option is outdated and jobs have to be submitted by additional plugins 'snakemake-executor-plugin-cluster-generic' which is already installed in your Conda enviroment. If you are already familiar with Snakemake try to submit it in a way you used to. If it does not work, consider downgrading to Snakemake v7 of read the [change logs of v8](https://snakemake.readthedocs.io/en/stable/getting_started/migration.html) and try to implement the plugin that is required to submit it as a job**
