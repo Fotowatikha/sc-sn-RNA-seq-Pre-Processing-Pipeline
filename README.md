@@ -597,3 +597,7 @@ wget tar -xvf pbmc_1k_v3_fastqs.tar
 ```
 
 You can delete the files from one of the lanes (L001 or L002) to make things run even faster. You can use these data to run things on the local cluster.
+
+## Uncommon issues
+
+Considering that that the MT genes from your specie of interest is being collected from the web, the Annotationhub.package in R sometimes fails to connect to Ensebml if the website is down for any reason. Once the data has been collected it will chanced in your Conda environment and retrieve the MT genes without any problems.
