@@ -116,9 +116,9 @@ DATA_FOLDER
 │   ├──  sampl2e_S1_L001_RR.fastq.gz
 │   └──  sample2_S1_L001_I1.fastq.gz
 └── SAMPLE_3_READS
-│   ├──  sample3_S1_L001_R1.fastq.gz
-│   ├──  sampl23_S1_L001_RR.fastq.gz
-│   └──  sample3_S1_L001_I1.fastq.gz
+    ├──  sample3_S1_L001_R1.fastq.gz
+    ├──  sampl23_S1_L001_RR.fastq.gz
+    └──  sample3_S1_L001_I1.fastq.gz
 ```
 **Example 2:**
 ```text
@@ -132,12 +132,12 @@ DATA_FOLDER
 │   ├──  sampl2e_S1_L001_RR.fastq.gz
 │   └──  sample2_S1_L001_I1.fastq.gz
 └── SAMPLE_3_READS
-│   ├──  sample3_S1_L001_R1.fastq.gz
-│   ├──  sample3_S1_L001_RR.fastq.gz
-│   ├──  sample3_S1_L001_I1.fastq.gz
-│   ├──  *sample4_S1_L001_R1.fastq.gz*
-│   ├──  *sample4_S1_L001_RR.fastq.gz*
-│   └──  *sample4_S1_L001_I1.fastq.gz*
+    ├──  sample3_S1_L001_R1.fastq.gz
+    ├──  sample3_S1_L001_RR.fastq.gz
+    ├──  sample3_S1_L001_I1.fastq.gz
+    ├──  *sample4_S1_L001_R1.fastq.gz*
+    ├──  *sample4_S1_L001_RR.fastq.gz*
+    └──  *sample4_S1_L001_I1.fastq.gz*
 ```
 **Example 3:**
 ```text
@@ -301,7 +301,7 @@ DATA_FOLDER
 └── SAMPLE_2
 │   ├──  raw_matrix-folder
 └── SAMPLE_3
-    ├──  filtered_matrix-folder
+    └──  filtered_matrix-folder
 ```
 
 **3.** Now with everything ready, go to the config.yaml and specify the path to your DATA_FOLDER as shown in the line below. With the **example 1** shown above, the path to your DATA_FOLDER will detect three samples. Each sample with different count matrices (some with filtered, some only raw and some have both). 
@@ -501,14 +501,14 @@ If you only run the QC and Pre-Processing part of the pipeline, the output files
 ```text
 OUT_DIRECTORY
 ├── SAMPLE_1
-│   ├──HTML_outs│COUNTS-QC_SAMPLE_1.html
-│   │           └QC-Preprocessing_SAMPLE_1.html
+│   ├── HTML_outs│ COUNTS-QC_SAMPLE_1.html
+│   │            └ QC-Preprocessing_SAMPLE_1.html
 │   │           
-│   └──new-outs│counts│FilteredCounts
-│   │                 └SoupCorrectedCounts
+│   └── new-outs│counts│ FilteredCounts
+│   │                  └ SoupCorrectedCounts
 │   │
-│   └──outs│filtered_feature_bc_matrix
-│          └raw_feature_bc_matrix
+│   └── outs│ filtered_feature_bc_matrix
+│           └ raw_feature_bc_matrix
 │   
 └── <SPECIE_NAME>_mkref_transcriptome
 ```
