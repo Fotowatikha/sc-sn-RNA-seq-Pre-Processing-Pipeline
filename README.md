@@ -316,3 +316,5 @@ animal: "Sus scrofa"
 You are still allowed to specify a path to a FASTA file. In such case, the name of your specie will be correctly parsed. THE PIPELINE DOES NOT SUPPORT MULTIPLE SPECIES AT THE SAME TIME, SO MAKE SURE YOUR SAMPLES ARE FROM THE SAME SPECIES!
 
 **5.** Change the parameters related to the QC and Pre-Processing if have to and you are all set!
+
+
