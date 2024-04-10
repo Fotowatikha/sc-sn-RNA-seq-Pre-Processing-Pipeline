@@ -501,14 +501,16 @@ If you only run the QC and Pre-Processing part of the pipeline, the output files
 ```text
 OUT_DIRECTORY
 ├── SAMPLE_1
-│   ├──  HTML_outs│   COUNTS-QC_SAMPLE_1.html
-│                 │   QC-Preprocessing_SAMPLE_1.html
+│   ├──HTML_outs│  COUNTS-QC_SAMPLE_1.html
+│               │  QC-Preprocessing_SAMPLE_1.html
 │                
-│   └──  new-outs│   counts│   FilteredCounts
-│                          │   SoupCorrectedCounts
+│   └──new-outs│  counts│  FilteredCounts
+│                       │  SoupCorrectedCounts
 │   
-│   └──  outs│   filtered_feature_bc_matrix
-│            │   raw_feature_bc_matrix
+│   └──outs│  filtered_feature_bc_matrix
+│          │  raw_feature_bc_matrix
 │   
 ├── <SPECIE_NAME>_mkref_transcriptome
 ```
+
+
