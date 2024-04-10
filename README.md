@@ -27,29 +27,29 @@ This pipeline is made to run on a Conda environment containing all the crucial p
 
 **Anaconda/Miniconda3 installation**
 
-1. [Download the Anaconda installer form the website](https://repo.anaconda.com/archive/Anaconda3-2024.02-1-Linux-x86_64.sh) or get the latest version using the line below.
+**1.** [Download the Anaconda installer form the website](https://repo.anaconda.com/archive/Anaconda3-2024.02-1-Linux-x86_64.sh) or get the latest version using the line below.
 ```sh
 wget "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh"
 ```
 
-2. Now install accordingly:
+**2.** Now install accordingly:
 ```sh
  bash "Anaconda/Miniconda3-<version>-Linux-x86_64.sh"
 ```
 
-3. Check if you installed correctly by calling the list of you installed packages and tools:
+**3.** Check if you installed correctly by calling the list of you installed packages and tools:
 ```sh
 conda list 
 ```
 
-4. (Optional) - If you have an older version, update the conda package manager to the latest version:
+**4.** (Optional) - If you have an older version, update the conda package manager to the latest version:
 ```sh
 conda update -n base conda
 ```
 
 **Setting up the environment for the pipeline**
 
-1. Now with Conda installed and update it is time to setup the environment that is required for the pipeline.
+**1.** Now with Conda installed and update it is time to setup the environment that is required for the pipeline.
 To install the essential packages and tools, it is important to set your Conda channels in the following order:
 ```sh
 conda config --add channels defaults
@@ -59,7 +59,7 @@ conda config --add channels bioconda
 conda config --add channels conda-forge
 ```
 
-2. Note that the channels you added first end up in the bottom for lower priority. This is intentional!
+**2.** Note that the channels you added first end up in the bottom for lower priority. This is intentional!
 Make sure that the these channels are the only ones active. If you have any other channels, you should first remove them as stated below. But first check channels you currently have:
 ```sh
 conda config --show channels
@@ -70,7 +70,7 @@ conda config --remove channels <name of channel>
 ```
 Then add the required channels as stated before (in the correct order!)
 
-3. The requirements are provided in the **"requirements.txt"** that you downloaded form the Github page. Make a new environment and install all the packages:
+**3.** The requirements are provided in the **"requirements.txt"** that you downloaded form the Github page. Make a new environment and install all the packages:
 ```sh
 conda create --name sc_sn_RNA_seq_pipeline --file requirements.txt
 ```
@@ -93,7 +93,7 @@ The files will no go to a new directory names **cellranger-8.0.0**, that contain
 
 The pipeline provides the option to skip any of the Cellranger tools if you wish to only carry out Quality-Control and Pre-Processing with the assumption that you already have count matrices downloaded from some data base (e.g. SRA) (more on this late...). For now, we will assume that you want to run the full pipeline that includes **1.** Cellranger mkgtf, **2.** Cellranger mkref, **3.** Cellranger count and **4.** QC & Pre-processing.
 
-1. Now go the pipeline directory (that you previously downloaded form the Github page) and open the provided **config.yaml** with your favorite text editor (e.g. Geany or Nano, or whatever you like). Now provide the full path to the installed Cellranger directory in the config file as shown below:
+**1.** Now go the pipeline directory (that you previously downloaded form the Github page) and open the provided **config.yaml** with your favorite text editor (e.g. Geany or Nano, or whatever you like). Now provide the full path to the installed Cellranger directory in the config file as shown below:
 ```yaml
 cellranger_directory: "/path/to/cellranger-8.0.0" 
 ```
@@ -122,19 +122,6 @@ DATA_FOLDER
 ```
 **Example 2:**
 ```text
-SAMPLE_1_2_READS
-├── sample1_S1_L001_R1.fastq.gz
-├── sample1_S1_L001_RR.fastq.gz
-├── sample1_S1_L001_I1.fastq.gz
-├── sample2_S1_L001_R1.fastq.gz
-├── sample2_S1_L001_RR.fastq.gz
-├── sample2_S1_L001_I1.fastq.gz
-├── sample3_S1_L001_R1.fastq.gz
-├── sample3_S1_L001_RR.fastq.gz
-├── sample3_S1_L001_I1.fastq.gz
-  ```
-**Example 3:**
-```text
 DATA_FOLDER
 ├── SAMPLE_1_READS
 │   ├──  sample1_S1_L001_R1.fastq.gz
@@ -146,27 +133,41 @@ DATA_FOLDER
 │   └──  sample2_S1_L001_I1.fastq.gz
 └── SAMPLE_3_READS
 │   ├──  sample3_S1_L001_R1.fastq.gz
-│   └──  sampl23_S1_L001_RR.fastq.gz
+│   └──  sample3_S1_L001_RR.fastq.gz
 │   └──  sample3_S1_L001_I1.fastq.gz
-│   ├──  sample4_S1_L001_R1.fastq.gz
-│   └──  sample4_S1_L001_RR.fastq.gz
-│   └──  sample4_S1_L001_I1.fastq.gz
+│   ├──  *sample4_S1_L001_R1.fastq.gz*
+│   └──  *sample4_S1_L001_RR.fastq.gz*
+│   └──  *sample4_S1_L001_I1.fastq.gz*
 ```
+**Example 3:**
+```text
+SAMPLE_1_2_READS
+├── sample1_S1_L001_R1.fastq.gz
+├── sample1_S1_L001_RR.fastq.gz
+├── sample1_S1_L001_I1.fastq.gz
+├── *sample2_S1_L001_R1.fastq.gz*
+├── *sample2_S1_L001_RR.fastq.gz*
+├── *sample2_S1_L001_I1.fastq.gz*
+├── **sample3_S1_L001_R1.fastq.gz**
+├── **sample3_S1_L001_RR.fastq.gz**
+├── **sample3_S1_L001_I1.fastq.gz**
+  ```
+
 
 Even tough the examples above show that you can run many samples at the same time, keep in mind this also comes at a hefty computation cost. In general, it is more convenient to run one sample at a time (except technical replicates)
 
-2. Now go to config.yaml and provide the path your reads (FASTQs). In Example 1 and 3 (shown above) the path to your reads would look like `/path/to/DATA_FOLDER`. In example 2 you should include the full path, including the folder where the reads are located: `/path/to/DATA_FOLDER/SAMPLE_1_2_READS`. 
+**2.** Now go to config.yaml and provide the path your reads (FASTQs). In Example 1 and 2 (shown above) the path to your reads would look like `/path/to/DATA_FOLDER`. In example 3 you should include the full path, including the folder where the reads are located: `/path/to/DATA_FOLDER/SAMPLE_1_2_READS`. 
 ```yaml
 reads_directory: "/path/to/DATA_FOLDER" 
 ```
 
-3. Now select a directory where you want your output files to be generated. By selecting such directory, all your results from multiple samples will be stored here, including all raw gene counts matrices, corrected gene counts matrices and HTML outputs (containing images for QC). Go to the config.yaml and provide the an outs directory. If you do not provide such directorty, your current working directory will be automatically selected (not recommended, unless you run it from the pipeline folder where the Snakefile is located). 
+**3.** Now select a directory where you want your output files to be generated. By selecting such directory, all your results from multiple samples will be stored here, including all raw gene counts matrices, corrected gene counts matrices and HTML outputs (containing images for QC). Go to the config.yaml and provide the an outs directory. If you do not provide such directorty, your current working directory will be automatically selected (not recommended, unless you run it from the pipeline folder where the Snakefile is located). 
 ```yaml
 out_directory: "/path/to/output-folder" 
 ```
 **DO NOT ATTEMPT TO RUN THE PIPELINE WITHIN THE out_directory OR reads_directory:** 
 
-4. With the assumption that you want to make a new reference profile, you have to go to the config.yaml and provide the path to your .gtf, .fasta (.fa), and specify that you want to run Cellranger mkgtf and Cellranger mkref. If you do not want to edit your .gtf file, then you can leave out `edit_gtf` Examples are shown below:
+**4.** With the assumption that you want to make a new reference profile, you have to go to the config.yaml and provide the path to your .gtf, .fasta (.fa), and specify that you want to run Cellranger mkgtf and Cellranger mkref. If you do not want to edit your .gtf file, then you can leave out `edit_gtf` Examples are shown below:
 **Select Cellranger mkref**
 ```yaml
 make_new_ref: "yes" 
@@ -188,16 +189,40 @@ The reference transcriptome created in this process can be used in the future fo
 transcriptome_directory: "/path/to/transcriptome-folder:" 
 ```
 
-5. Since the expression assay captures transcripts by the poly-A and 3' ends, most reads will align towards that region, including the UTR. If the UTR sequence between (multiple) transcripts happens to be similar, the gene counts at an unwanted locus could become inflated, while missing the true counts for the relevant genes. Taking into account that GTF files often contain entries for non-polyA transcripts, there is a minor chance that these transcripts (and its UTRs) may overlap with actual protein-coding genes. Thus, by default, the GTF file will be manipulated to only include genes that have polyA entries. However, the option is provided to include all genes, long non-coding RNAs, antisense sequences and more... 
+**5.** Since the expression assay captures transcripts by the poly-A and 3' ends, most reads will align towards that region, including the UTR. If the UTR sequence between (multiple) transcripts happens to be similar, the gene counts at an unwanted locus could become inflated, while missing the true counts for the relevant genes. Taking into account that GTF files often contain entries for non-polyA transcripts, there is a minor chance that these transcripts (and its UTRs) may overlap with actual protein-coding genes. Thus, by default, the GTF file will be manipulated to only include genes that have polyA entries. However, the option is provided to include all genes, long non-coding RNAs, antisense sequences and more... 
 To ensure that we only include genes that contain polyA entries (and protein coding genes), by default in config.yaml, we set this parameter to:
 ```yaml
 gene_biotype: "gene_biotype:protein_coding"
 ```
 This is an addition to **Cellranger mkgtf** that select by `edit_gtf:` parameter. You can also choose to leave this out or change it according to your need. More options are provided [here](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/inputs/cr-3p-references).
 
-6. For the STAR read mapping, we include alignments to intronic regions as this greatly improves the number of detected genes in single-nuclei data (due to abundant pre-mRNA) and could potentially improve the detection of cell populations that have low expression of genes (e.g. neutrophils and mast cells). If you do not want to include intronic reads, then you can go to the config.yaml and adjust the following:
+**6.** For the STAR read mapping, we include alignments to intronic regions as this greatly improves the number of detected genes in single-nuclei data (due to abundant pre-mRNA) and could potentially improve the detection of cell populations that have low expression of genes (e.g. neutrophils and mast cells). If you do not want to include intronic reads, then you can go to the config.yaml and adjust the following:
 ```yaml
 cellranger_counts_options: "--include-introns=false"
 ```
 You can choose to include other options as shown [here](https://www.10xgenomics.com/support/software/cell-ranger/latest/tutorials/cr-tutorial-ct).
+
+
+
+
+Finally, CellRanger returns two count matrices (filtered_feature_bc_matrix and raw_feature_bc_matrix) and by the default option, the filtered matrix will be used for the pre-processing as this contains only cells (droplets) that have at least 500 transcripts (unique molecular identifiers - UMIs). The use of the raw matrix remains optional.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
