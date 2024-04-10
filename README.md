@@ -6,9 +6,9 @@ Now considering that the emergence of scRNA-seq techniques provides the framewor
 
 ## About
 
-The first step of the pre-processing pipeline includes the use of the CellRanger shell utility that is specifically made by 10X Genomics to handle datasets from a wide range of single-cell technologies. In order to generate your single cell feature counts for the library, we utilize [**cellranger count**](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/running-pipelines/cr-gex-count) that takes your reads (FASTQ files) and performs alignment, filtering, barcode counting and UMI counting. CellRanger already provides pre-built human, mouse, and barnyard (human & mouse) [reference packages](https://www.10xgenomics.com/support/software/cell-ranger/downloads) for read alignment and gene expression quantification. If you do not have a reference transcriptome, the pipeline enables the creation of a custom reference by using a provided reference genome sequence (FASTA file) and a gene annotations (GTF file) that is compatible with the RNA-seq aligner, STAR. Here, we utilize **cellranger mkgtf** and **cellranger mkref** to generate the reference transcriptome for your specie of interest.
+The first step of the pre-processing pipeline includes the use of the CellRanger shell utility that is specifically made by 10X Genomics to handle datasets from a wide range of single-cell technologies. In order to generate your single cell feature counts for the library, we utilize [**cellranger count**](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/running-pipelines/cr-gex-count) that takes your reads (FASTQ files) and performs alignment, filtering, barcode counting and UMI counting. CellRanger already provides pre-built human, mouse, and barnyard (human & mouse) [reference packages](https://www.10xgenomics.com/support/software/cell-ranger/downloads) for read alignment and gene expression quantification. If you do not have a reference transcriptome, the pipeline enables the creation of a custom reference by using a provided reference genome sequence (FASTA file) and a gene annotations (GTF file) that is compatible with the RNA-seq aligner, STAR. Here, we utilize [**cellranger mkgtf**](https://www.10xgenomics.com/support/software/cell-ranger/latest/tutorials/cr-tutorial-mr) and [**cellranger mkref**](https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/inputs/cr-3p-references#) to generate the reference transcriptome for your specie of interest.
 
-By consider the gene count matrices as the starting point after mapping reads to the reference, the major steps in this pre-processing is to: (1) Provide the user with quality control (QC) plots to gain insight on the overall quality of the cells prior to any extensive filtering; (2) Correcting the data from cell-free ambient RNA; (3) Extensive filtering to remove droplets that are unlikely to represent intact individual cells; (4) Removal of droplets that violate the assumption for containing one cell; (5) Provide the user with QC plots to gain insight on the quality of the data post-filtering.
+By consider the gene count matrices as the starting point after mapping reads to the reference, the major steps in this pre-processing is to: (1) Provide the user with quality control (QC) plots to gain insight on the overall quality of the cells prior to any extensive filtering; (2) Correcting the data from cell-free ambient RNA (using [**SoupX**](https://github.com/constantAmateur/SoupX)); (3) Extensive filtering to remove droplets that are unlikely to represent intact individual cells (using [**DoubeletFinder**](https://github.com/chris-mcginnis-ucsf/DoubletFinder)); (4) Removal of droplets that violate the assumption for containing one cell; (5) Provide the user with QC plots to gain insight on the quality of the data post-filtering.
 
 A schematic image of steps in the pipeline is shown below:
 
@@ -194,6 +194,22 @@ cellranger_counts_options: "--include-introns=false"
 You can choose to include other options as shown [here](https://www.10xgenomics.com/support/software/cell-ranger/latest/tutorials/cr-tutorial-ct).
 
 Finally, CellRanger returns two count matrices (filtered and raw) and by the default option, the filtered matrix will be used for the pre-processing as this contains only cells (droplets) that have at least 500 transcripts (unique molecular identifiers - UMIs). The use of the raw matrix remains optional.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
