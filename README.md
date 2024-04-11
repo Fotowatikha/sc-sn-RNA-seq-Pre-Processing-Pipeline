@@ -530,9 +530,11 @@ If you want to dry-run outside the pipeline folder, then run:
 snakemake --snakefile /path/to/pipeline-folder/Snakefile --configfile /path/to/pipeline-folder/config.yaml -np
 ```
 
-When everything is setup correctly you get too see something as shown in the image below. Keep in mind that the order of the jobs are not correct, but they do run in the correct order! When you do a dry run, you scroll down further and see which job are running first on the command line.
+When everything is setup correctly you get too see something as shown in the image below. Keep in mind that the order of the jobs are not correct, but they do run in the correct order! When you do a dry run, you scroll down further and see which job are running first on the command line. 
 
 <img width="794" alt="Scherm­afbeelding 2024-04-10 om 11 17 40" src="https://github.com/Fotowatikha/sn-sn-RNA-seq-Pre-Processing-Pipeline/assets/157910396/4305a383-cbda-482e-bd89-e92fd5a770c6">
+
+If the dry-run fails, we often provide you with some explination of what went wrong. Read them carefully!
 
 
 **Running the Snakefile on your local node**
@@ -575,7 +577,7 @@ latency-wait: 60  # Larger files likely need more latency
 use-conda: true
 ```
 
-Then inside the pipeline folder, run:
+Dry-run first (as shown before). If everything is good to go, then inside the pipeline folder, run:
 
 ```sh
 nohup snakemake --profile SLURM --configfile config.yaml &
