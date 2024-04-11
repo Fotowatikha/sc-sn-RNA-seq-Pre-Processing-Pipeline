@@ -617,3 +617,7 @@ wget tar -xvf pbmc_1k_v3_fastqs.tar
 You can delete the files from one of the lanes (L001 or L002) to make things run even faster. You can use these data to run things on the local cluster.
 
 If you download reads from the SRA database, then make sure they are named correctly and compatible with Cellragner. More of this [here](https://kb.10xgenomics.com/hc/en-us/articles/115003802691-How-do-I-prepare-Sequence-Read-Archive-SRA-data-from-NCBI-for-Cell-Ranger)
+
+## Contact me for questions
+
+You can contact me (https://twitter.com/H_Fotowaikha) if you have questions or think that something has to be changed.
