@@ -501,13 +501,13 @@ If you only run the QC and Pre-Processing part of the pipeline, the output files
 ```text
 OUT_DIRECTORY
 ├── SAMPLE_1
-│   ├── HTML_outs│ COUNTS-QC_SAMPLE_1.html
+│   ├── HTML_outs├ COUNTS-QC_SAMPLE_1.html
 │   │            └ QC-Preprocessing_SAMPLE_1.html
 │   │           
-│   └── new-outs│counts│ FilteredCounts
+│   └── new-outs│counts├ FilteredCounts
 │   │                  └ SoupCorrectedCounts
 │   │
-│   └── outs│ filtered_feature_bc_matrix
+│   └── outs├ filtered_feature_bc_matrix
 │           └ raw_feature_bc_matrix
 │   
 └── <SPECIE_NAME>_mkref_transcriptome
@@ -559,14 +559,18 @@ By default Snakemake considers a waiting time of 5 seconds to check the output f
 nohup snakemake --configfile config.yaml --cores 8 -w 120 &
 ```
 
-**Submitting the Snakefile to the cluster (not yet tested)**
 
-In order to submit it as a job to the cluster, you most first locate the **SLURM** folder inside the pipeline folder and adjust the config.yaml with correct number of resources  and jobs. 
+**Submitting the Snakefile to the cluster using Snakemake v8+ method (not yet tested)**
 
+(Note that we are not using the traditional --cluster options to submit jobs. Snakemake v8+ is no longer backwards compatible with older version when it comes to submitting jobs to external clusters. Here we make use of the **snakemake-interface-executor-plugins** and **snakemake-executor-plugin-cluster-generic**. If you want to take a look on how this works, please read the manual of Snakemake v8. These plugins have already been installed for you in your Conda environment, so do not worry about getting it. If you find this new method useless or somewhat limited for your needs, feel free to downgrade to older versions of Snakemake and submit your jobs as you were used to using --cluster or --slurm options.)
+
+In order to submit it as a job to the cluster, you most first locate the **SLURM** folder inside the pipeline folder and adjust the config.yaml with correct number of resources and jobs:
 ```yaml
-cluster: "sbatch --time 24:00:00 --mem 64000 --cpus-per-task 16 --job-name={rule} --output=SLURM_LOGS/{rule}_%j.out --error=SLURM_LOGS/{rule}_%j.err"
+executor: cluster-generic
+cluster-generic-submit-cmd: "sbatch --time 24:00:00 --mem 30000 --cpus-per-task 7 --job-name={rule} --output=SLURM_LOGS/{rule}_%j.out --error=SLURM_LOGS/{rule}_%j.err"
 
 jobs: 25  # generally a sensible default is slightly below the maximum number of jobs you are allowed to have submitted at a time on your system.
+latency-wait: 60  # Larger files likely need more latency
 use-conda: true
 ```
 
@@ -575,14 +579,25 @@ Then inside the pipeline folder, run:
 ```sh
 nohup snakemake --profile SLURM --configfile config.yaml &
 ```
+The logs will go to the **SLURM_LOGS** folder. This folder will be generated in your current working directory everytime you run the pipeline.
 
-The logs will go to the **SLURM_LOGS** folder.
+You can also run it from outside the pipeline folder by:
+```sh
+nohup snakemake --snakefile /path/to/pipeline-folder/Snakefile --profile /path/to/SLURM --configfile /path/to/pipeline-folder/config.yaml &
+```
 
-**Keep in mind that i have not yet checked if the method above works when submitting a job to the cluster. It appears that in Snakemake v8 the --profile option is outdated and jobs have to be submitted by additional plugins 'snakemake-executor-plugin-cluster-generic' which is already installed in your Conda enviroment. If you are already familiar with Snakemake try to submit it in a way you are already used to. If it does not work, consider downgrading to Snakemake v7 or read the [change logs of v8](https://snakemake.readthedocs.io/en/stable/getting_started/migration.html) and try to implement the plugin that is required to submit it as a job**
+**If it does not work, consider downgrading to Snakemake v7 or read the [change logs of v8](https://snakemake.readthedocs.io/en/stable/getting_started/migration.html) and try to implement the plugin that is required to submit it as a job**
+
+
+## Uncommon issues
+
+Considering that that the MT genes from your specie of interest is being collected from the web, the Annotationhub.package in R sometimes fails to connect to Ensebml if the website is down for any reason. Once the data has been collected it will chanced in your Conda environment and retrieve the MT genes without any problems.
 
 ## Example of QC and Pre-processing html output
 
-After a successful run, you are provided by a html file that contains the results of your QC (as explained before). I have provided an example in the **EXAMPLE_RESULTS** folder (on Github). This should give you an idea on how the results look like. Carefully look at the graphs and read the descriptions provided for each result.
+After a successful run, you are provided by a html file that contains the results of your QC (as explained before). I have provided an example in the EXAMPLE_RESULTS folder (on Github). This should give you an idea on how the results look like. Carefully look at the graphs and read the descriptions provided for each result.
+
+Now if you are not happy with the our default parameters, then feel free to change them in the config.yaml. By changing any of the parameters related to the **QC and Pre-Processing** rule, Snakemake will automatically detect it and only run that specific rule in the pipeline. You previous results will be automatically deleted for you and replaced with the new ones. If you still want to keep your previous results, please move them to another directory.
 
 ## Download some data test the pipeline
 
@@ -597,7 +612,3 @@ wget tar -xvf pbmc_1k_v3_fastqs.tar
 ```
 
 You can delete the files from one of the lanes (L001 or L002) to make things run even faster. You can use these data to run things on the local cluster.
-
-## Uncommon issues
-
-Considering that that the MT genes from your specie of interest is being collected from the web, the Annotationhub.package in R sometimes fails to connect to Ensebml if the website is down for any reason. Once the data has been collected it will chanced in your Conda environment and retrieve the MT genes without any problems.
