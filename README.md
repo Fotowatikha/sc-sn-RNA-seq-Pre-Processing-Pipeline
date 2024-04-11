@@ -317,6 +317,7 @@ You are still allowed to specify a path to a FASTA file. In such case, the name 
 
 **5.** Change the parameters related to the QC and Pre-Processing if have to and you are all set!
 
+
 ## The full config.yaml parameters
 
 ```yaml
@@ -599,7 +600,7 @@ After a successful run, you are provided by a html file that contains the result
 
 Now if you are not happy with the our default parameters, then feel free to change them in the config.yaml. By changing any of the parameters related to the **QC and Pre-Processing** rule, Snakemake will automatically detect it and only run that specific rule in the pipeline. You previous results will be automatically deleted for you and replaced with the new ones. If you still want to keep your previous results, please move them to another directory.
 
-## Download some data test the pipeline
+## Download some data to test the pipeline
 
 If you want you can download single cell human PBMC data to run the pipeline in a small scale to learn how everything works:
 
