@@ -583,7 +583,7 @@ The logs will go to the **SLURM_LOGS** folder. This folder will be generated in 
 
 You can also run it from outside the pipeline folder by:
 ```sh
-nohup snakemake --snakefile /path/to/pipeline-folder/Snakefile --profile /path/to/SLURM --configfile /path/to/pipeline-folder/config.yaml &
+nohup snakemake --snakefile /path/to/pipeline-folder/Snakefile --profile /path/to/pipeline-folder/SLURM --configfile /path/to/pipeline-folder/config.yaml &
 ```
 
 **If it does not work, consider downgrading to Snakemake v7 or read the [change logs of v8](https://snakemake.readthedocs.io/en/stable/getting_started/migration.html) and try to implement the plugin that is required to submit it as a job**
@@ -612,3 +612,5 @@ wget tar -xvf pbmc_1k_v3_fastqs.tar
 ```
 
 You can delete the files from one of the lanes (L001 or L002) to make things run even faster. You can use these data to run things on the local cluster.
+
+If you download reads from the SRA database, then make sure they are named correctly and compatible with Cellragner. More of this [here](https://kb.10xgenomics.com/hc/en-us/articles/115003802691-How-do-I-prepare-Sequence-Read-Archive-SRA-data-from-NCBI-for-Cell-Ranger)
