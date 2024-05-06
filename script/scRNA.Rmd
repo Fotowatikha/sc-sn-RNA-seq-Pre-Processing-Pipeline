@@ -1,0 +1,1629 @@
+---
+name: "Some irrelevant guy from earth doing his thesis"
+title: "Single cell/nuclei QC and pre-processing"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: html_notebook
+---
+
+```{r Load Libraries, echo=FALSE, results='hide', include=FALSE}
+library(Seurat) 
+library(dplyr)
+library(dbplyr) 
+library(patchwork)
+library(tidyverse)
+library(gsubfn) 
+library(ggplot2)
+library(RColorBrewer)
+
+library(SoupX)   
+library(DoubletFinder)
+
+library(AnnotationHub)
+library(BiocFileCache)
+library(ensembldb)  
+library(DropletUtils) 
+
+library(knitr) 
+```
+
+```{r import the requirements, echo=FALSE, results='hide', include=FALSE}
+#################### Chunk #################### 
+# // This chunk we specify the paths, parameters, names and all dependencies
+# // The purpose here is to specify the parameters without the use of Snakemake (for debugging)
+####################       #################### 
+
+sessionInfo()
+# Path 10X output:
+parent_directory = snakemake@params$parent_dir
+
+sample_path = c(snakemake@params$sample_names) # sample folder
+counts_path_filtered = snakemake@params$counts_path_filtered # outs/filtered_feature_bc_matrix
+counts_path_raw = snakemake@params$counts_path_raw # outs/raw_feature_bc_matrix
+
+# Sample and project names:
+sample_names = c(snakemake@params$graph_names) # Sample name, for graphs, 
+
+# Animal names Ensembl:
+animal = snakemake@params$animal # For AnnotationHub's query() function
+
+# Use local MT chance of specie from Conda envrioment
+use.local.cache.MT = snakemake@params$use_local_cache_MT
+
+# Use raw: 
+use.raw.only = snakemake@params$use_raw_only # use raw matrix only if specified 
+# Initial filtering:
+min.cell = snakemake@params$MIN_cell
+min.feature = snakemake@params$MIN_feature # if using raw matrix only, then use this parameter (set it at around 100)
+
+# n highly variable features
+nfeatures = snakemake@params$nfeatures
+
+# UMAP resolution
+umap.resolution = snakemake@params$umap_resolution
+
+# For SoupX:
+low.complexity = snakemake@params$low_complexity # "yes", no by default, skip soupX when low complexity
+n.highly_affected.genes = snakemake@params$n_highly_affected_genes
+n.markers.genes = snakemake@params$n_markers_genes
+#canonical_markers = c(snakemake@params$canonical_markers)
+canonical_markers = scan(snakemake@params$canonical_markers, character(), quote = "") # from .txt
+
+# Extensive filtering:
+featureLOW = snakemake@params$feature_LOW
+countLOW = snakemake@params$count_LOW 
+featureHIGH = snakemake@params$feature_HIGH
+countHIGH = snakemake@params$count_HIGH
+mt.Con = snakemake@params$mt_Con
+# By quantile
+feature.quantile.low = snakemake@params$feature_quantile_low
+UMI.quantile.low = snakemake@params$UMI_quantile_low
+feature.quantile.high = snakemake@params$feature_quantile_high
+UMI.quantile.high = snakemake@params$UMI_quantile_high
+
+# DoubletFinder:
+CPU.cores = snakemake@params$CPU_cores
+skip.DoubletFinder = snakemake@params$skip_DoubletFinder # "yes" no by default, skip DoubletFinder when low complexity
+
+Experimental = "" # Accounts for the biology 
+
+# Parameter rules
+# If the user changes localHub settings
+if (use.local.cache.MT == "" & str_length(use.local.cache.MT) == 0) {
+  use.local.cache.MT = FALSE } else {use.local.cache.MT = TRUE}
+# If we use raw only by user definition or only available raw matrix 
+if (((str_length(counts_path_filtered) == 0) | (use.raw.only == "yes" & str_length(use.raw.only) != 0)) & min.feature == "") {
+  min.feature = "100" } else {min.feature = min.feature}
+# If the user changes the UMAP resolution
+if (umap.resolution == "" & str_length(umap.resolution) == 0) {
+  umap.resolution = "0.8" } else {umap.resolution = umap.resolution}
+# If the user selects min.cell, the soupX will not run:
+if (str_length(min.cell) > 0) {
+  low.complexity = "yes"} else {low.complexity = low.complexity}
+
+
+# Convert to numeric values
+umap.resolution <- as.numeric(umap.resolution)
+nfeatures <- as.numeric(nfeatures)
+n.highly_affected.genes <- as.numeric(n.highly_affected.genes)
+n.markers.genes <- as.numeric(n.markers.genes)
+featureLOW <- as.numeric(featureLOW)
+countLOW <- as.numeric(countLOW)
+featureHIGH <- as.numeric(featureHIGH)
+countHIGH <- as.numeric(countHIGH)
+mt.Con <- as.numeric(mt.Con)
+CPU.cores <- as.numeric(CPU.cores)
+feature.quantile.low <- as.numeric(feature.quantile.low) / 100
+UMI.quantile.low <- as.numeric(UMI.quantile.low) / 100
+feature.quantile.high <- as.numeric(feature.quantile.high) / 100
+UMI.quantile.high <- as.numeric(UMI.quantile.high) / 100
+min.cell <- as.numeric(min.cell)
+min.feature <- as.numeric(min.feature)
+
+
+# output knit
+opts_knit$set(root.dir = snakemake@params$knits)
+```
+
+```{r prepare the MT genes, echo=FALSE, results='hide', include=FALSE}
+#################### Chunk #################### 
+# // This chunk calculates and returns a vector of Mitochondrial genes.
+# // The gene names from organism of interest are imported from AnnotationHub
+####################       #################### 
+
+# Load mitochondrial genes (protein coding) 
+ann.hub <- AnnotationHub(ask = FALSE, localHub = use.local.cache.MT) # connect to Annhub
+# Access the Ensembl database for pig
+ann.hub.database <- query(ann.hub, pattern = c(paste(animal), "EnsDb"), ignore.case = TRUE)
+# Acquire the latest annotation files
+id <- ann.hub.database %>%
+        mcols() %>%
+        rownames() %>%
+        tail(n = 1)
+# Downloading the Ensembldb database
+ensembl.database <- ann.hub[[id]]
+# Extract gene-level information from the database
+annotations_MT <- genes(ensembl.database, 
+                     return.type = "data.frame")
+# Select annotations of interest
+annotations_MT <- annotations_MT %>%
+        dplyr::select(gene_name, seq_name)
+
+# filter data set and keep MT rows
+MT_rows <- which(annotations_MT$seq_name == "MT") # get row number of element "MT" inside
+MT_genes <- annotations_MT %>% dplyr::slice(MT_rows)  # Get MT genes by slicing all the rows that do not have "MT"
+MT_genes <- as.character(MT_genes$gene_name[MT_genes$gene_name != ""]) # remove empty "" values
+#MT_genes = c("ND1", "ND2", "COX1", "COX2", "ATP8", "ATP6", "COX3", "ND3", "ND4L", "ND4", "ND5", "ND6", "CYTB")
+```
+
+```{r Load in raw 10X data, echo=FALSE, results='hide', include=FALSE}
+#################### Chunk #################### 
+# // This chunk imports the the filtered and raw count matrices generated by CellRanger
+# // The Mitochondria genes will adjusted by substituting a string of "MT-" to the initial gene name
+####################       #################### 
+
+if (use.raw.only == "yes" & str_length(use.raw.only) != 0) {
+    # If we only want to use raw date, then run this
+  d10x.data <- sapply(sample_path, function(i){
+  d10x <- Read10X(file.path(parent_directory, i, paste(counts_path_raw)))
+  })
+  d10x.data.raw <- sapply(sample_path, function(i){
+  d10x <- Read10X(file.path(parent_directory, i, paste(counts_path_raw))) # and make another copy of the "raw_feature_bc_matrix/" (for SoupX)
+  })
+} else {
+  if (str_length(counts_path_filtered) != 0) {
+  # Load the filtered single cell data from path if available
+  d10x.data <- sapply(sample_path, function(i){
+  d10x <- Read10X(file.path(parent_directory, i, paste(counts_path_filtered))) 
+#  colnames(d10x) <- paste(sapply(strsplit(colnames(d10x),split="-"),'[[',1L),i,sep="-")
+#  d10x 
+  })
+  if (str_length(counts_path_raw) != 0) {
+    # And load the raw single cell data from path if available
+    d10x.data.raw <- sapply(sample_path, function(i){
+    d10x <- Read10X(file.path(parent_directory, i, paste(counts_path_raw)))
+    })
+    } else {
+      # Else load the filtered single cell data from path if raw not available
+      d10x.data.raw <- sapply(sample_path, function(i){
+      d10x <- Read10X(file.path(parent_directory, i, paste(counts_path_filtered)))
+      })
+      }
+} else { 
+  # Load the raw single cell data from path if filtered not available at all!
+  d10x.data <- sapply(sample_path, function(i){
+  d10x <- Read10X(file.path(parent_directory, i, paste(counts_path_raw)))
+  })
+  d10x.data.raw <- sapply(sample_path, function(i){
+  d10x <- Read10X(file.path(parent_directory, i, paste(counts_path_raw))) # and make another copy of the "raw_feature_bc_matrix/" (for SoupX)
+  })
+  }
+  }
+
+# Add mitochondrial genes to d10x.data matrix and remove underscores from gene names
+for (i in sample_path) {
+  rownames.d10x <- rownames(d10x.data[[i]]) # Save row names
+  MT.positions.d10x <- na.omit(c(match(c(paste(MT_genes)), rownames.d10x))) # Find index of mitochondrial genes in saved row names
+  # Use index of mitochondrial genes and replace those gene names with "^MT-" + the gene name if not already present
+  if (grepl("MT-", MT_genes[1]) == TRUE) {
+  rownames.d10x[MT.positions.d10x] <- c(paste("", MT_genes, sep = "")) # Keep as is if MT-
+} else if (grepl("mt-", MT_genes[1]) == TRUE) {
+  rownames.d10x[MT.positions.d10x] <- c(paste("", MT_genes, sep = "")) # Keep as is if mt-
+  } else rownames.d10x[MT.positions.d10x] <- c(paste("MT-", MT_genes, sep = "")) # add MT- to gene name
+  row.names(d10x.data[[i]]) <- rownames.d10x # Append the new row names with correct MT marks in original Matrix
+  row.names(d10x.data[[i]]) <- gsub("_", "-", rownames(d10x.data[[i]])) 
+}
+# And add mitochondrial genes tod 10x.data.raw matrix and remove underscores in gene names
+for (i in sample_path) {
+  rownames.d10x.raw <- rownames(d10x.data.raw[[i]]) 
+  MT.positions.d10x.raw <- na.omit(c(match(c(paste(MT_genes)), rownames.d10x.raw)))
+  if (grepl("MT-", MT_genes[1]) == TRUE) {
+  rownames.d10x.raw[MT.positions.d10x.raw] <- c(paste("", MT_genes, sep = "")) # Keep as is if MT-
+} else if (grepl("mt-", MT_genes[1]) == TRUE) {
+  rownames.d10x.raw[MT.positions.d10x.raw] <- c(paste("", MT_genes, sep = "")) # Keep as is if mt-
+  } else rownames.d10x.raw[MT.positions.d10x.raw] <- c(paste("MT-", MT_genes, sep = "")) # add MT- to gene name
+  row.names(d10x.data.raw[[i]]) <- rownames.d10x.raw
+  row.names(d10x.data.raw[[i]]) <- gsub("_", "-", rownames(d10x.data.raw[[i]]))
+}
+```
+
+#### In the chuck below, we will make Seurat objects of all samples (and apply basic filtering based on absolute median deviation to remove outliers): ####
+
+##### Description: #####
+
+* For each object, we keep all genes that are expressed in at least 0 cells, thus we keep all genes as this is required for the removal of ambient RNA (The Cellrange filtered_feature_bc_matrix does not contain genes that have no expression across all cells, but this is often not the case for the raw_feature_bc_matrix, and considering that both matrices will be used for the detection of ambient RNA it is not wise to filter genes with 0 counts in the filtered_feature_bc_matrix. However, this is not an issue if the user chooses to work with the filtered_feature_bc_matrix without including the raw_feature_bc_matrixfrom from the the start).
+* Similarly, for now we want to keep all cells that have at least 0 genes expressed. We will later filter out all cells that have not at least x-number of genes expressed after successfully removing ambient RNA. Keep in mind that in reality no cells will be found with 0 genes expressed anyway considering the Cellranger pipeline already removed empty droplets and cells containing <500 UMIs.
+However, if you choose to work with the raw_feature_bc_matrix, you can actually fish out cell that may truly have <100 genes and <500 UMIs. In that case, we will make sure that we remove droplets (cells) that have <100 genes by default. You can choose to change this parameter, but it is very unlikely to find real cells with <100 genes. 
+
+##### Results: #####
+
+* From now on you (the user) should keep an eye on the "the number of samples (cells)" in the chuck below. The number of samples in each filtering step will give you an idea how many cell you are losing in each step.
+```{r converting 10X data into Seurat objects, echo=FALSE}
+#################### Chunk #################### 
+# // This chunk imports the modified filtered_feature_bc_matrix and converts ot to a Seurat object
+# // The Seurat object stores the count matrices in slots 
+# // Any modification to the count matrix will automatically add it to a new slot (e.g. scaling or normalization)
+# // This chunk also contains a function to calculate the percentage of expected droplets containing more than one cell
+####################       #################### 
+
+# Making Seurat objects and putting them in a vector
+sobj_list <- list() # make empty list to append Seurat Objects in the loop below
+for (i in 1:length(x = sample_path)) {  # we loop in range of sample_name, because that determine the number of replicates we have
+  name <- paste('', sample_path[i], sep='') # name the objects in list
+  sobj_list[name] <- list(CreateSeuratObject(counts = d10x.data[[i]], project = paste(sample_names[i]), min.cells = if (min.cell >= 0 & is.na(min.cell) == FALSE){
+    min.cell = min.cell}else{min.cell = 0}, min.features = if (min.feature >= 0 & is.na(min.feature) == FALSE){
+      min.feature = min.feature}else{min.feature = 0})) # append the Seurat objects in a list of Seurat Objects
+#    print(sobj_list) # ASSERT CODE (REOMVE LATER!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!)
+}
+
+########## Function ########## 
+# // This function calculates and returns a vector of percentage of expected droplets containing more than one cell for each 10x files.
+# // Input file must be a vector of Seurat objects
+# // The estimated percentage of multiplets is calculated by a linear function provided by 10X based on the number recovered cells
+estimate_percentage_multiplets <- function(sobj) {
+  estimated_multiplets <- (dim(sobj)[2] / 1250) / 100 # estimated percentage of multiplets is determined by the number of recovered cells according to 10X genomics: linear formula: %multiplet = num-cells / 1250
+  return(list(estimated_multiplets))
+}
+# Execute estimate_percentage_multiplets function
+percent.multiplets <- sapply(sobj_list, estimate_percentage_multiplets)
+print(sobj_list)
+```
+* After filtering the objects based on the absolute median deviation, you can take a close look at the number of samples again and see how many cell were removed when compared to the previous step:
+  - Absolute median deviation threshold is set in a way to remove the very extreme cells in case some slipped through the Cellranger filtering.
+  - The filtering here will often not remove more than 20-50 cells and will not impact the pre-processing algorithms. 
+  - This step does have great impact if you choose to work with the raw_feature_bc_matrix. For a good reason too... unless you are in love with empty droplets...
+
+* Again, in the chunk below you should see haw many cells you lost. when compared to the previous step. 
+```{r apply basic filtering to each Seuat object, echo=FALSE}
+#################### Chunk #################### 
+# // This chunk imports the previously made object and removes extreme cells based on Absolute median deviation
+# // The filtering is very subtle and will will only remove the very extreme cells
+# // Often no more than a handful of cells will be removed and this will not impact the pre-processing algorithms
+# // This chunk is executed using two separate functions (identifying and removing outlier)
+####################       #################### 
+
+########## function ########## 
+# // Function to calculate and return outliers based on absolute median deviations
+# // The input file must a vector of objects
+cal_outlier <- function(sobj, metric, nmads){
+  M <- sobj@meta.data[[metric]]
+  median_M <- median(M, na.rm = TRUE)
+  mad_M <- mad(M, na.rm = TRUE)
+  outlier <- (M < (median_M - nmads * mad_M)) | (M > (median_M + nmads * mad_M))
+  return(outlier)
+}
+
+########## Function ########## 
+# // Function to remove outliers and return clean object
+# // The input file must a vector of objects
+rem_outlier <- function(sobj){
+  
+#  sobj <- Read10X(file.path(parent_directory, sample_names, "outs/raw_feature_bc_matrix/"))
+#  sobj <- CreateSeuratObject(counts = sobj, min.cells = 10, min.features = 200)
+#  sobj$sample_names <- sample_names
+  
+  # add bQC metrics
+  sobj$log1p_total_counts <- log1p(sobj@meta.data$nCount_RNA)
+  sobj$log1p_n_genes_by_counts <- log1p(sobj@meta.data$nFeature_RNA)
+#  sobj[["percent.mt"]] <- PercentageFeatureSet(sobj, pattern = "MITOCHONDRIAL")
+  
+  # Find outliers using the "cal_outlier" function:
+  bool_vector <- !cal_outlier(sobj, "log1p_total_counts", 5) & !cal_outlier(sobj, "log1p_n_genes_by_counts", 5) # & !cal_outlier(sobj, "percent.mt", 10)
+  sobj <- subset(sobj, cells = which(bool_vector))
+  return(sobj)
+}
+
+# Print the output for control
+sobj_list <- sapply(sobj_list, rem_outlier)
+for (i in 1:length(x = sobj_list)) {
+  print(sobj_list[i])
+}
+```
+
+#### QC plots: ####
+
+##### Description: #####
+
+* The number of unique genes detected in each cell: 
+  - Empty droplets and low quality cells often have very few genes and many 0 counts
+  - Cell multiplets (doublets) often have very high gene count.
+  - If you work with the filtered counts matrix as a starting point you will not find cells with <500 UMIs.
+
+* User expectation:
+  - In general, you should have an expectation of home many genes/UMIs the majority of your cells contain. Most of the time, The UMI counts per cell should be at least ~500 (and ~200 genes), that is considered the low end of what you should expect. However, cell that express extremely low number of genes will have UMI count below ~500. The same is true for a failed experiments with degraded RNAs. Thus the user should have an clear expectation.
+  
+* The percentage of reads mapped to the mitochondrial genome: 
+  - Often, dying cells (or low quality cells) have lots of mitochondrial contamination, possibly due to loss of cytoplasmic RNA from perforated cells. The reasoning is that mitochondria are larger than individual transcript molecules and less likely to escape through tears in the cell membrane.
+  - Note that for single-nuclei samples, MT genes are often still present, but at much lower quantities when compared to single-cell data.
+  - Mitochondrial QC metrics are calculates with the percentage of counts originating from a set of features.
+  - We use the set of all genes starting with "MT-" or "mt-" as mitochondrial genes (which have been inserted/manipulated in ALL MT genes). (The Ensembl database is used to find the MT genes in the species!)
+  
+##### Results: #####
+
+* Barplots:
+  - Representing the distribution and number of gene counts, transcript counts, and percentage of MT reads per cell. Generally, high fraction of MT reads in combination with low gene/transcript counts indicate stressed or dead cells. However, highly prolific stem or cancer-like cell are often rich in MTs, whereas some immune cells such as neutrophiles are in lower end of the spectrum in terms of gene and transcript counts. 
+  - The dashed red and orange lines represent the theoretical thresholds (Red: 10% MT, 200 nGenes, 550 nUUMIs. Orange: 7.5% MT)
+```{r QC MT, fig.height=8, fig.width=15, echo=FALSE, message=FALSE}
+#################### Chunk #################### 
+# // This chunk plots histograms with the frequency (cells) as a function of nGenes, nUMIs and MT percentage
+# // A separate functions calculates and adds the percent MT to the object Metadata
+# // For each histogram lines in either red, orange and green represent the thresholds 
+####################       #################### 
+
+########## Function ########## 
+# // This function calculates and returns the percentage of mitochondrial genes per object and adds it to the MetaData slot (obj@metadata)
+# // Input file must be a vector of objects
+get_MT_percentage <- function(sobj) {
+   if (grepl("mt-", MT_genes[1]) == TRUE) {
+   sobj[["percent.mt"]] <- PercentageFeatureSet(sobj, pattern = "mt-") # search for -mt pastern if lower case 
+ } else { sobj[["percent.mt"]] <- PercentageFeatureSet(sobj, pattern = "MT-")
+ }
+  return(sobj)
+}
+# Execute the function get_MT_percentage
+sobj_list <- sapply(sobj_list, get_MT_percentage)
+
+# visualize MT percentage in cells
+get_histograms_QC <- function(sobj) {
+      # visualize percentage MT genes per cell
+      h1 <- hist(sobj[["percent.mt"]]$percent.mt, breaks = 30, xlab = "Percentage Mitochondrial Genes (%)", ylab = "Frequency (cells)", 
+             main = paste("Histogram: QC MT", sobj@meta.data[1,1], sep = " - "), 
+             col = "white", labels = TRUE, plot = TRUE) 
+      abline(v = 10, col="red", lwd=3, lty=2)
+      abline(v = 7.5, col="orange", lwd=3, lty=2)
+      # visualize number of genes in cells
+      h2 <- hist(sobj[["nFeature_RNA"]]$nFeature_RNA, breaks = 30, xlab = "Number of genes", ylab = "Frequency (cells)", 
+             main = paste("Histogram: QC number of genes", sobj@meta.data[1,1], sep = " - "), 
+             col = "white", labels = TRUE, plot = TRUE)
+      abline(v = 200, col="red", lwd=3, lty=2)
+      # visualize number of UMIs (molecules) in cells
+      h3 <- hist(sobj[["nCount_RNA"]]$nCount_RNA, breaks = 30, xlab = "Number of UMIs (RNA molecules)", ylab = "Frequency (cells)", 
+             main = paste("Histogram: QC number of UMIs", sobj@meta.data[1,1], sep = " - "), 
+             col = "white", labels = TRUE, plot = TRUE)
+      abline(v = 500, col="red", lwd=3, lty=2)
+      return()
+}
+# Execute get_histograms_QC function
+hist <- sapply(sobj_list, get_histograms_QC)
+
+
+############ SECOND WAY TO DO IT, FOR SAVING IMAGES ##############
+#for (i in 1:length(x = sobj_list)) {
+  # visualize percentage MT genes per cell
+#  h1 <- hist(sobj_list[[i]][["percent.mt"]]$percent.mt, breaks = 30, xlab = "Percentage Mitochondrial Genes (%)", ylab = "Frequency (cells)", 
+#             main = paste("Histogram: QC MT", sobj_list[[i]]@meta.data[1,1], sep = " - "), col = "white", labels = TRUE, plot = TRUE) 
+  # visualize number of genes in cells
+#  h2 <- hist(sobj_list[[i]][["nFeature_RNA"]]$nFeature_RNA, breaks = 30, xlab = "Number of genes", ylab = "Frequency (cells)", 
+#             main = paste("Histogram: QC number of genes", sobj_list[[i]]@meta.data[1,1], sep = " - "), col = "white", labels = TRUE, plot = TRUE)
+  # visualize number of UMIs (molecules) in cells
+#  h3 <- hist(sobj_list[[i]][["nCount_RNA"]]$nCount_RNA, breaks = 30, xlab = "Number of UMIs (RNA molecules)", ylab = "Frequency (cells)", 
+#             main = paste("Histogram: QC number of genes", sobj_list[[i]]@meta.data[1,1], sep = " - "), col = "white", labels = TRUE, plot = TRUE) 
+#  print(h1) # SAVE IT FOR PIPELINE
+#  print(h1)
+#  print(h1)
+#}
+
+
+
+
+
+######## TESTING CODE
+
+
+
+
+
+      
+```
+
+#### Here we will visualize the distribution of nGenes and nUMIs and the complexity of the cells: ####
+
+##### Description: #####
+
+* Terminology:
+  - nFeature_RNA is the number of genes detected in each cell (violin plot).
+  - nCount_RNA is the total number of molecules detected within a cell (UMIs) (violin plot).
+  - percent.mt is the percentage of mitochondrial UMIs within a cell (violin plot).
+  - Cell complexityis the proportion of nGenes raltive to the number of transcripts (RNA-molecules/UMIs).
+  - Low complexity cells is a cell that has few genes, but more transcripts.
+  - High complexity cells is a cell that more genes and less transcripts.
+  - Dominant gene is a gene that has the hiighest expression in a cell relative to the other genes.
+
+##### Results: #####
+
+* Violin plots:
+  - Low nFeature_RNA for a cell indicates that it may be dead/dying or an empty droplet. It is usually accepted that cells that are poor quality are likely to have low genes and UMIs per cell, and correspond to the data points in the bottom left quadrant of the plot. Good cells will generally exhibit both higher number of genes per cell and higher numbers of UMIs. But be careful here, some cell types are known to have low genes and UMIs.
+  - High nCount_RNA and/or nFeature_RNA indicates that the "cell" may in fact be a doublet (or multiplet). But be careful again, some cell types are known to have super high genes and UMIs (i.e. developing cells, cancer, stem-cells).
+  
+* Percent-MT vs nGene / Percent-MT vs nUMI plot: 
+  - Again, for bad cell we expect to see the high percentage MT with low number of genes/UMIs (unless expected otherwise, e.g. cardiac cells).
+  - The dashed read line represents a theoretical MT limit of 10% and orange 5%.
+
+* nUMIs vs nGenes plot (also log scaled version): 
+  - Empty droplets and low quality cells often have very few genes and many "0" genes/UMI counts (Minimum of 500 UMIs if you use the filtered counts matrix).
+  - Cell multiplets (doublets) often have very high gene/UMI count.
+  - Notice that cell with the highest mitochondrial genes are located in the bottom-left of the plot, indicating that these are truly bad cell considering they contain high MT percentage, but low number of genes/UMIs. Keep in mind that good cells could also have number of MT genes, these cells are often activated cells (i.e. Stem/cancer/cycling/developing cells). Now it could a little troubling if the majority of your high MT cells also contain many genes/UMIs, especially if you do not expect activated cell types in your data. You have to be aware with the type of cell you are working with.
+  - In the nUMI vs nGenes plot we can also see the complexity of the dataset with potential errors. Generally, we expect a linear relationship between the number of genes and UMIs in this plot. If cells in the plot are skewed far from the middle line towards the bottom-right this could mean that the experiment has captured very few number of genes and those same genes have been sequenced multiple times. Similarly, if the cells are skewed towards the top-left this could mean that experiment has captured many genes, but they are not sequenced deeply enough (which results in low number of UMIs). Keep in mind that as a result of RNA degradation, a failed experiment could still give us a good plots.
+  - The orange dashed lines show the theoretical lower limits of UMIs (550) and genes (200). The yellow dashed lines show the upper and lower quantiles of both number of genes and UMIs (default set between 2-98%). If you choose filter the number of genes and UMIs by user-defined quantiles, then the yellow dashed lines will be set at those numbers.
+  
+* Complexity plot (the singular plot below): 
+  - Complexity can also be visualized by dividing the nGenes by nUMIs for each cell. Higher values indicate that we are getting shallower coverage of more genes, and lower values mean that we are seeing fewer genes overall. 
+  - Generally, we expect the novelty score to be above 0.80 (indicated with dashed red line).
+  - As there is a linear relationship between the number of genes and transcripts for the majority of the cells, it is expected to find the highest probability at a genes/transcript ratio between 0.85-0.95, even for low-complexity cells. A large probability density at anything below 0.8 indicates a failed experiment, as insufficient genes have been captured in proportion to transcript counts.
+  
+* Plotting complexity as function of percentage of counts per gene (the first trio plots below):
+  - Complexity: Log10 - nUMIs vs nGenes:    Again, make another plot as before (log10 - nUMIs vs nGenes plot), but now we fit a linear model and calculate the residual from the middle point for each cell. Now we can clearly visualize which cells have more transcripts vs genes relative to the middle-line (or vice versa). This is indicated by the strength of the blue or red color.
+  - Residual vs Density:    In this plot, we can see the frequency (density) of cells as a function is the residuals (i.e. deviation from the linear regression). What do you see here? A normal distribution or skewed towards the left or right? This density plot is simply an addition to the linear model and it is expected that you find the largest density around 0, meaning that the majority of the cells were indeed close to the middle line in the linear regression. Just like before, if the graphs is skewed toward the left (negative residuals), this means that you may have an undesired number of low-complexity cells. Likewise, if the graph is skewed towards the right side (positive residuals), then you may many high-complexity cells. Usually, such behavior is related to some sort of failed experiment.
+  - Residual vs Percentage Largest genes:   In this plot, for each cell, we calculate the gene with the highest percentage of reads and put against the residuals. You can now see a semi-density plot as before, but now with the actual cells. Do you see a pattern here? Do you see any low-complexity cells with a high percentage of a dominant gene? Ideally, we expect a volcano plot centered around the middle. If you have many low-complexity cells with a significantly inflated dominant gene, this might indicate bad cells. But first, we have to find out winch dominant gene they express to make a final conclusion if it is truly related to some biological reason or technical.
+
+* Plotting complexity and examining dominant genes (the final trio plots below):
+  - Complexity by Largest Gene:   This is the same linear plot as before, but now we visualize the most dominant gene per cell (top 8 out of total in the dataset). Do you see a pattern here or a specific gene that is expressed in low or high complexity cells? Often, the unusual populations in these plots can derive from the activity of a single gene, so now you have a chance figure this out... If these genes happen to be from a mitochondrial origin, then you are likely dealing with dead cells. Likewise, high expression of MALAT1 can also indicate dead cells.
+  - Residuals vs Percentage Largest Genes:    Same as before, but now with the dominant gene visualized. Which genes are the dominant ones in you off target populations? And does this meet your expectation?  
+  - Residuals vs Percentage Largest Genes + MT %:   Same plot, but now with percentage MT. Do the off-target cell populations show high percentage of MT? And do find some correlation between this plot and the dominant genes from before (MT genes)?
+```{r QC graph and filtering, fig.height=9, fig.width=17, echo=FALSE, warning=FALSE}
+#################### Chunk #################### 
+# // This chunk plots Violin plot with the frequency (cells) as a function of nGenes, nUMIs and MT percentage
+# // This chunk plots the linear relationship of nGenes as a function of nUMIs (also Log scaled) with MT percentage per cell
+# // This chunk plots Complexity (Density vs log(genes per UMI))
+# // This chunk Feature Scatters cells with percent MT as a function of nGenes and nUMIs
+####################       #################### 
+
+########## Function ########## 
+# // This function returns violin plots of "nFeature_RNA", "nCount_RNA", "percent.mt" for each object
+# // This function returns scatterplots of "nUMIs vs nGenes", "Percent-MT vs nGenes", "Percent-MT vs nUMIs" for each object
+# // Input file must be a vector of Seurat objects
+get_viol_QC <- function(sobj) {
+  v1 <- VlnPlot(sobj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, cols = "magenta")
+  print(v1) # SAVE IT FOR PIPE
+  
+  as_tibble(sobj[[]], rownames="Cell.Barcode") -> qc.metrics # sobj_list[[1]][[]] shows data.frame of metadata
+
+  p1 <- qc.metrics %>%
+    arrange(percent.mt) %>%
+    ggplot(aes(nCount_RNA,nFeature_RNA, colour=percent.mt)) + 
+    geom_point() + 
+    scale_colour_gradientn(colours = c('black', 'red3', 'red2'), values = c(0, (((max(sobj[["percent.mt"]]$percent.mt) * 6) / 100) / 10), 1)) +
+    geom_hline(yintercept = 200, linetype="dashed", color = "orange", size=0.7) +
+    geom_hline(yintercept = quantile(sobj$nFeature_RNA, prob=if (feature.quantile.high >= 0 & feature.quantile.high <= 1 & is.na(feature.quantile.high) == FALSE){feature.quantile.high = feature.quantile.high}else{feature.quantile.high = 0.98}), linetype="dashed", color = "yellow", size=0.7) + 
+    geom_hline(yintercept = quantile(sobj$nFeature_RNA, prob=if (feature.quantile.low >= 0 & feature.quantile.low <= 1 & is.na(feature.quantile.low) == FALSE){feature.quantile.low = feature.quantile.low}else{feature.quantile.low = 0.02}), linetype="dashed", color = "yellow", size=0.7) +
+    geom_vline(xintercept = 550, linetype="dashed", color = "orange", size=0.7) +
+    geom_vline(xintercept = quantile(sobj$nCount_RNA, prob=if (UMI.quantile.high >= 0 & UMI.quantile.high <= 1 & is.na(UMI.quantile.high) == FALSE){UMI.quantile.high = UMI.quantile.high}else{UMI.quantile.high = 0.98}), linetype="dashed", color = "yellow", size=0.7) +
+    geom_vline(xintercept = quantile(sobj$nCount_RNA, prob=if (UMI.quantile.low >= 0 & UMI.quantile.low <= 1 & is.na(UMI.quantile.low) == FALSE){UMI.quantile.low = UMI.quantile.low}else{UMI.quantile.low = 0.02}), linetype="dashed", color = "yellow", size=0.7) +
+    geom_smooth(method = "lm", color = "green", size=1) + 
+    ggtitle(paste("nUMIs vs nGenes with percent MT", sobj@meta.data[1,1], sep = " - ")) + 
+    ylab("Number of Genes") + 
+    xlab("Number of UMIs (RNA Molecules)") + 
+    theme_bw() + # make filler white
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) # remove raster
+  
+  p1.1 <- qc.metrics %>%
+    arrange(percent.mt) %>%
+    ggplot(aes(log10(nCount_RNA),log10(nFeature_RNA), colour=percent.mt)) + 
+    geom_point() + 
+    scale_colour_gradientn(colours = c('black', 'red3', 'red'), values = c(0, (((max(sobj[["percent.mt"]]$percent.mt) * 6) / 100) / 10), 1)) +
+    geom_hline(yintercept = log10(200), linetype="dashed", color = "orange", size=0.7) +
+    geom_hline(yintercept = log10(quantile(sobj$nFeature_RNA, prob=if (feature.quantile.high >= 0 & feature.quantile.high <= 1 & is.na(feature.quantile.high) == FALSE){feature.quantile.high = feature.quantile.high}else{feature.quantile.high = 0.98})), linetype="dashed", color = "yellow", size=0.7) + 
+    geom_hline(yintercept = log10(quantile(sobj$nFeature_RNA, prob=if (feature.quantile.low >= 0 & feature.quantile.low <= 1 & is.na(feature.quantile.low) == FALSE){feature.quantile.low = feature.quantile.low}else{feature.quantile.low = 0.02})), linetype="dashed", color = "yellow", size=0.7) +
+    geom_vline(xintercept = log10(550), linetype="dashed", color = "orange", size=0.7) +
+    geom_vline(xintercept = log10(quantile(sobj$nCount_RNA, prob=if (UMI.quantile.high >= 0 & UMI.quantile.high <= 1 & is.na(UMI.quantile.high) == FALSE){UMI.quantile.high = UMI.quantile.high}else{UMI.quantile.high = 0.98})), linetype="dashed", color = "yellow", size=0.7) +
+    geom_vline(xintercept = log10(quantile(sobj$nCount_RNA, prob=if (UMI.quantile.low >= 0 & UMI.quantile.low <= 1 & is.na(UMI.quantile.low) == FALSE){UMI.quantile.low = UMI.quantile.low}else{UMI.quantile.low = 0.02})), linetype="dashed", color = "yellow", size=0.7) +
+    geom_smooth(method = "lm", color = "green", size=1) + 
+    ggtitle(paste("Log10 scaled: nUMIs vs nGenes with percent MT")) + 
+    ylab("Log10 (Number of Genes)") + 
+    xlab("Log10 (Number of UMIs)") + 
+    theme_bw() + # make filler white
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())  # remove raster
+  
+  # Add number of genes per UMI for each cell to metadata
+  sobj$log10GenesPerUMI <- log10(sobj$nFeature_RNA) / log10(sobj$nCount_RNA)
+  # Visualize the overall complexity of the gene expression by visualizing the genes detected per UMI
+  p1.2 <- sobj@meta.data %>%
+  	ggplot(aes(log10GenesPerUMI)) +
+  	geom_density(alpha = 1, color = "orange", size=1.5) +
+  	theme_classic() +
+  	geom_vline(xintercept = 0.8, linetype="dashed", color = "red", size=1) +
+    ggtitle(paste("Complexity Plot:", sobj@meta.data[1,1], sep = " ")) + 
+    ylab("Density") + 
+    xlab("Log10 Genes/UMI (Genes per UMI)")
+  
+     # OLD UMI vs Gene plot
+#    p1 <- FeatureScatter(sobj, feature1 = "nCount_RNA", feature2 = "nFeature_RNA" , cols = "black", ) + 
+#    geom_smooth(method = "lm") + ggtitle(paste("nUMIs vs nGenes", sobj@meta.data[1,1], sep = " - ")) + 
+#    ylab("Number of Genes") + 
+#    xlab("Number of UMIs (RNA Molecules)") + NoLegend()
+  
+  
+  # Let take a closer look at the complexity of the data and driven by what gene. 
+  # Calculate calculate the log10(nFeature_RNA) / log10(nCount_RNA)) and put in the qc.metric
+  qc.metrics %>%
+  dplyr::mutate(complexity=log10(nFeature_RNA) / log10(nCount_RNA))  -> qc.metrics
+  # Make linear models of log10(nFeautures) vs Log10(nUMIs) and put in put in complexity.lm
+  # Here, we calculate the difference from the observed value to the expected
+  lm(log10(qc.metrics$nFeature_RNA)~log10(qc.metrics$nCount_RNA)) -> complexity.lm
+  # Calculate the complexity from the middle line of the linear model
+  # We will use this for the color scale of the graph as well.
+  qc.metrics %>%
+  dplyr::mutate(complexity_diff = log10(nFeature_RNA) - ((log10(qc.metrics$nCount_RNA)*complexity.lm$coefficients[2])+complexity.lm$coefficients[1])
+  ) -> qc.metrics
+  # Find the delta difference for the graph
+  min(c(max(qc.metrics$complexity_diff),0-min(qc.metrics$complexity_diff))) -> complexity_scale
+
+  # Here we visualize the the data complexity (cells) based on the calculations above
+  p1.3 <- qc.metrics %>% 
+  dplyr::mutate(complexity_diff=replace(complexity_diff,complexity_diff< -0.5,-0.5)) %>%
+  ggplot(aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=complexity_diff)) +
+  geom_point() +
+  geom_abline(slope=complexity.lm$coefficients[2], intercept = complexity.lm$coefficients[1]) +
+  scale_colour_gradient2(low="blue2",mid="grey",high="red2") +
+  ggtitle(paste("Complexity: Log10 - nUMIs vs nGenes", sobj@meta.data[1,1], sep = " - ")) + 
+  ylab("Log10 (Number of Genes)") + 
+  xlab("Log10 (Number of UMIs)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+  # Here we visualize the density plot of the cells from the middle of the linear graph from P1.3
+  p1.4 <- qc.metrics %>% ggplot(aes(x=complexity_diff)) + 
+  geom_density(fill="yellow") +
+  ggtitle(paste("Residual vs Density")) + 
+  ylab("Density") + 
+  xlab("Complexity Difference (Residuals)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  
+  # Now lets which genes are actually driving the low complexity cells in the data
+  # For this, we first calculate the percentage of largest genes.
+  # Find the cells with largest counts
+  qc.metrics %>% mutate(largest_count = apply(sobj@assays$RNA@layers$counts, 2, max)) -> qc.metrics # "2" is to return max columns values
+  # find the index of the cell with largest counts
+  qc.metrics %>% mutate(largest_index = apply(sobj@assays$RNA@layers$counts, 2, which.max)) -> qc.metrics
+  # Use the index and get the gene name that accounts for the largest counts per cell
+  qc.metrics %>% mutate(largest_gene = rownames(sobj)[largest_index]) -> qc.metrics
+  # Now calculate the percentage relative to the total counts in the data
+  qc.metrics %>% mutate(percent.Largest.Gene =  100 * largest_count / nCount_RNA) -> qc.metrics
+  
+  # Visualize the complexity explained by percentage of largest genes
+  p1.5 <- qc.metrics %>% ggplot(aes(x=complexity_diff, y=percent.Largest.Gene)) + 
+    geom_point() +
+    ggtitle(paste("Residuals vs Percentage Largest Genes")) + 
+    ylab("Percentage Largest Gene (%)") + 
+    xlab("Complexity Difference (Residuals)") + 
+    theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  
+  # Sort the percentage largest genes 
+  qc.metrics %>%
+  dplyr::group_by(largest_gene) %>% dplyr::arrange(desc(percent.Largest.Gene)) -> largest_gene_list
+  # Filter out the genes >5% counts 
+  largest_gene_list %>%
+  dplyr::filter(percent.Largest.Gene > 0.5) %>% # filter exists in other packages, use dplyr:: to fix
+  dplyr::pull(largest_gene) -> largest_genes_to_plot
+  largest_genes_to_plot <- unique(largest_genes_to_plot)[1:8] # Remove duplicated gene names and take up to 10 genes
+  
+  # Plot the linear complexity model that explain the deviation by the largest genes
+  p1.6 <- qc.metrics %>%
+  dplyr::filter(largest_gene %in% largest_genes_to_plot) %>%
+  dplyr::mutate(largest_gene=factor(largest_gene, levels=largest_genes_to_plot)) %>%
+  dplyr::arrange(largest_gene) %>%
+  ggplot(aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=largest_gene)) +
+  geom_point(size=1.5) +
+  geom_abline(slope=complexity.lm$coefficients[2], intercept = complexity.lm$coefficients[1]) + #import the line form linear model from before
+  geom_hline(yintercept = log10(200), linetype="dashed", color = "orange", size=0.7) +
+  geom_hline(yintercept = log10(quantile(sobj$nFeature_RNA, prob=if (feature.quantile.high >= 0 & feature.quantile.high <= 1 & is.na(feature.quantile.high) == FALSE){feature.quantile.high = feature.quantile.high}else{feature.quantile.high = 0.98})), linetype="dashed", color = "yellow", size=0.7) + 
+    geom_hline(yintercept = log10(quantile(sobj$nFeature_RNA, prob=if (feature.quantile.low >= 0 & feature.quantile.low <= 1 & is.na(feature.quantile.low) == FALSE){feature.quantile.low = feature.quantile.low}else{feature.quantile.low = 0.02})), linetype="dashed", color = "yellow", size=0.7) +
+    geom_vline(xintercept = log10(550), linetype="dashed", color = "orange", size=0.7) +
+    geom_vline(xintercept = log10(quantile(sobj$nCount_RNA, prob=if (UMI.quantile.high >= 0 & UMI.quantile.high <= 1 & is.na(UMI.quantile.high) == FALSE){UMI.quantile.high = UMI.quantile.high}else{UMI.quantile.high = 0.98})), linetype="dashed", color = "yellow", size=0.7) +
+    geom_vline(xintercept = log10(quantile(sobj$nCount_RNA, prob=if (UMI.quantile.low >= 0 & UMI.quantile.low <= 1 & is.na(UMI.quantile.low) == FALSE){UMI.quantile.low = UMI.quantile.low}else{UMI.quantile.low = 0.02})), linetype="dashed", color = "yellow", size=0.7) +
+    scale_colour_manual(values=c("grey",RColorBrewer::brewer.pal(9,"Set1"))) +
+  ggtitle(paste("Complexity by Largest Gene", sobj@meta.data[1,1], sep = " - ")) + 
+  ylab("Log10 (Number of Genes)") + 
+  xlab("Log10 (Number of UMIs)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+    
+  # Now plot a scatter of the cells with the residuals on the x-axis and percentage largest gene in the y-axis
+  p1.7 <- qc.metrics %>%
+  dplyr::filter(largest_gene %in% largest_genes_to_plot) %>%
+  dplyr::mutate(largest_gene=factor(largest_gene, levels=largest_genes_to_plot)) %>%
+  dplyr::arrange(largest_gene) %>%
+  ggplot(aes(x=complexity_diff, y=percent.Largest.Gene, colour=largest_gene)) +
+  geom_point(size=1.5) +
+  scale_colour_manual(values=c("grey",RColorBrewer::brewer.pal(9,"Set1"))) + 
+  ggtitle(paste("Residual vs Percentage Largest Genes")) + 
+  ylab("Percentage Largest Gene (%)") + 
+  xlab("Complexity Difference (Residuals)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  
+  # Same as above, but now with percentage.MT as gradient
+  p1.8 <- qc.metrics %>%
+  arrange(percent.mt) %>%
+  ggplot(aes(x=complexity_diff, y=percent.Largest.Gene, colour=percent.mt)) +
+  geom_point() +
+  scale_colour_gradientn(colours = c('black', 'red3', 'red2'), values = c(0, (((max(sobj[["percent.mt"]]$percent.mt) * 6) / 100) / 10), 1)) +
+  ggtitle(paste("Residuals vs Percentage Largest Genes + MT %")) + 
+  ylab("Percentage Largest Gene (%)") + 
+  xlab("Complexity Difference (Residuals)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())   
+  
+  # Visualize the relationship between %MT vs nGenes nad nUMIs
+  p2 <- FeatureScatter(sobj, feature1 = "nFeature_RNA", feature2 = "percent.mt", cols = "black") + 
+    ggtitle(paste("Percent-MT vs nGenes", sobj@meta.data[1,1], sep = " - ")) + 
+    geom_hline(yintercept = 10, linetype="dashed", color = "red", size=1) +
+    geom_hline(yintercept = 7.5, linetype="dashed", color = "orange", size=1) + 
+    ylab("Percent Mtiochondrial Genes (%)") + 
+    xlab("Number of Genes") + NoLegend() + theme(plot.title = element_text(size = 15))
+  p3 <- FeatureScatter(sobj, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "black") + 
+    ggtitle(paste("Percent-MT vs nUMIs")) + 
+    geom_hline(yintercept = 10, linetype="dashed", color = "red", size=1) +
+    geom_hline(yintercept = 7.5, linetype="dashed", color = "orange", size=1) + 
+    ylab("Percent Mtiochondrial Genes (%)") + 
+    xlab("Number of UMIs (RNA Molecules)") + NoLegend() + theme(plot.title = element_text(size = 15))
+  
+  # Print plots
+  print(p2 + p3)
+  print(p1 + p1.1) # or SAVE
+  print(p1.2)
+  print(p1.3 + p1.4 + p1.5)
+  print(p1.6 + p1.7 + p1.8)
+  return()
+}
+# Apply function get_viol_QC
+viol <- sapply(sobj_list, get_viol_QC)
+
+# Find the upper quantile ablines for UMI and nFeatures that we want to plot later in the final graphs
+# These are the quantiles of the unfiltered data
+UMI.quantile.abline <- c()
+feature.quantile.abline <- c()
+UMI.quantile.abline.low <- c()
+feature.quantile.abline.low <- c()
+for (i in 1:length(x = sobj_list)) {
+  if (UMI.quantile.high >= 0 & UMI.quantile.high <= 1 & is.na(UMI.quantile.high) == FALSE) {
+    UMI.quantile.abline[i] <- quantile(sobj_list[[i]]$nCount_RNA, prob=UMI.quantile.high)
+  } else { 
+    UMI.quantile.abline[i] <- quantile(sobj_list[[i]]$nCount_RNA, prob=0.98)
+    }
+  if (feature.quantile.high >= 0 & feature.quantile.high <= 1 & is.na(feature.quantile.high) == FALSE) {
+    feature.quantile.abline[i] <- quantile(sobj_list[[i]]$nFeature_RNA, prob=feature.quantile.high)
+  } else { 
+    feature.quantile.abline[i] <- quantile(sobj_list[[i]]$nFeature_RNA, prob=0.98)
+  }
+  if (UMI.quantile.low >= 0 & UMI.quantile.low <= 1 & is.na(UMI.quantile.low) == FALSE) {
+    UMI.quantile.abline.low[i] <- quantile(sobj_list[[i]]$nCount_RNA, prob=UMI.quantile.low)
+  } else { 
+    UMI.quantile.abline.low[i] <- quantile(sobj_list[[i]]$nCount_RNA, prob=0.02)
+  }
+  if (feature.quantile.low >= 0 & feature.quantile.low <= 1 & is.na(feature.quantile.low) == FALSE) {
+    feature.quantile.abline.low[i] <- quantile(sobj_list[[i]]$nFeature_RNA, prob=feature.quantile.low)
+  } else { 
+    feature.quantile.abline.low[i] <- quantile(sobj_list[[i]]$nFeature_RNA, prob=0.02)
+  }
+}
+
+############ SECOND WAY TO DO IT, FOR SAVING IMAGES ##############
+#for (i in 1:length(x = sobj_list)) {
+#  v1 <- VlnPlot(sobj_list[[i]], features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3)
+#  print(v1) # SAVE IT FOR PIPE
+  
+#  p1 <- FeatureScatter(sobj_list[[i]], feature1 = "nCount_RNA", feature2 = "nFeature_RNA", cols = "black", ) + geom_smooth(method = "lm") + ggtitle(paste("nUMIs vs nGenes", sobj_list[[i]]@meta.data[1,1], sep = " - ")) + ylab("Number of Genes") + xlab("Number of UMIs (RNA Molecules)") + NoLegend()
+#  p2 <- FeatureScatter(sobj_list[[i]], feature1 = "nFeature_RNA", feature2 = "percent.mt", cols = "black") + ggtitle(paste("Percent-MT vs nGenes", sobj_list[[i]]@meta.data[1,1], sep = " - ")) + ylab("Percent Mtiochondrial Genes (%)") + xlab("Number of Genes") + NoLegend()
+#  p3 <- FeatureScatter(sobj_list[[i]], feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "black") + ggtitle(paste("Percent-MT vs nUMIs", sobj_list[[i]]@meta.data[1,1], sep = " - ")) + ylab("Percent Mtiochondrial Genes (%)") + xlab("Number of UMIs (RNA Molecules)") + NoLegend()
+#  print(p1) # or SAVE
+#  print(p2) 
+#  print(p3)   
+```
+
+
+```{r cpm normalization, echo=FALSE, results='hide', include=FALSE}
+#################### Chunk #################### 
+# // This chunk takes CPM(10.000) normalizes the raw count matrix and appends it in a new data slot
+# // The raw count matrix will not be transformed and native version will be stored in its previous slot
+####################       #################### 
+
+########## Function ########## 
+# // This function returns applies a CPM-log(10.000) normalization on the count matrix for each object
+# // Input file must be a vector of Seurat objects
+CPM_norm <- function(sobj) {
+  sobj <- NormalizeData(sobj, normalization.method = "LogNormalize", scale.factor = 10000)
+  return(sobj)
+}
+# Execute CPM_norm function
+sobj_list <- sapply(sobj_list, CPM_norm)
+```
+
+#### Visualize the highy variable genes: ####
+
+##### Description: #####
+
+* We first employ a log normalization method that normalizes the gene expression counts for each cell by the total expression and multiply this by a scale factor of 10,000 and log transform it to stabilize the variance so that larger values do not dominate over smaller ones.
+
+* Then the top 2,500 genes (user-adjustable) with largest standardize variance will be selected automatically and used for the clustering. By selecting highly variable genes, we ensure that house-keeping genes with similar expressions across different cells do not interfere with the unsupervised clustering. 
+
+* Note that there is no definitive answer on how many genes one should include for clustering. Thus it is recommended to carefully consider the right number or by trying a range of 2000-5000 variable genes. Generally, low-complexity data (i.e. data with similar cells) will have lower number of variable genes when compared to complex tissue. By default, we will select 2500 highly variable genes. 
+
+##### Results: #####
+
+* Most Variable Genes:
+  - The plot should not looks like a flat line. There should be a clear distribution of the genes with the most highly variable on the top. If there are no highly variable genes in your data, then you are likely dealing with cells that have similar expression levels of the same genes. This can drastically impact the clustering and ambient RNA correction as most downstream steps are computed only on these genes.
+```{r show most variable genes, fig.height=5, fig.width=8, echo=FALSE, warning=FALSE, results='hide'}
+#################### Chunk #################### 
+# // This chunk takes and the calculated the user specified (or default 2500) highly variable genes to be used for later clustering
+# // High variability is found by calculating the standardized variance as function of mean expression
+# // Only these genes will be considered for unsupervised clustering of the cells
+####################       #################### 
+
+########## Function ########## 
+# // This function calculates, plots and returns the top 2000 most variable genes based on the standardized variance
+# // Input file must be a vector of Seurat objects
+most_var_genes <- function(sobj) {
+  if (nfeatures >= 0 & nfeatures <= 5000 & nfeatures >= 2000 & is.na(nfeatures) == FALSE){
+    sobj <- FindVariableFeatures(sobj, selection.method = "vst", nfeatures = nfeatures) #### AOTOMATE THE NUMBER OF VARIABLES (but based on what logic?)
+  } else {
+      sobj <- FindVariableFeatures(sobj, selection.method = "vst", nfeatures = 2500)
+    }
+  # Save the top 10 of the 2000 genes (for visualization)
+  top10.sobj <- head(VariableFeatures(sobj), 10)
+  # Plot the most variable genes and the top 10
+  plot1 <- VariableFeaturePlot(sobj)
+  plot2 <- LabelPoints(plot = plot1, points = top10.sobj)
+  print(plot2 + ggtitle(paste("Most Variable Genes", sobj@meta.data[1,1], sep = " - ")))
+  
+  return(sobj)
+}
+# Execute most_var_genes function
+sobj_list <- sapply(sobj_list, most_var_genes)
+
+####################### TESTING CODE FOR SINGLETS ########################
+#sobj <- FindVariableFeatures(sobj, selection.method = "vst", nfeatures = 2500) #### AOTOMATE THE NUMBER OF VARIABLES
+# Save the top 10 of the 2000 genes (for visualization)
+#top10.sobj <- head(VariableFeatures(sobj), 10)
+# Plot the most variable genes and the top 10
+#plot1 <- VariableFeaturePlot(sobj)
+#plot2 <- LabelPoints(plot = plot1, points = top10.sobj)
+#plot2 + ggtitle("Most Variable Genes")
+```
+
+
+```{r scaling of the data, fig.height=10, fig.width=7, results='hide', echo=FALSE, include=FALSE}
+#################### Chunk #################### 
+# // This chunk takes the normalized matrix slot and scales the data and appends it in a new scaled.data slot
+# // Each feature will be centered to have a mean of 0 and scaled by the standard deviation of each feature 
+# // This step gives equal weight to the genes, so that highly-expressed genes do not dominate for downstream (e.g. PCA and clustering)
+####################       #################### 
+
+########## Function ########## 
+# // This function shifts the expression of each gene, so that the mean expression across cells is 0 
+# // This functions scales the expression of each gene, so that the variance across cells is 1
+# // The function returns the scaled results to object@scale.data for each Seurat object
+# // Input file must be a vector of Seurat objects
+scaling <- function(sobj) {
+  all.genes.sobj <- rownames(sobj)
+  sobj <- ScaleData(sobj, features = all.genes.sobj) 
+  return(sobj)
+}
+# Execute scaling function
+sobj_list <- sapply(sobj_list, scaling)
+
+
+# Even though we got rid of cells that had a lot of MT RNA, there might still be some cells remain that have highly variable MT RNA
+# So we will regress out all the MT rubbish
+# scale using all genes and regress out remaining highly variable MT genes is there is any left:
+#sobj <- ScaleData(sobj, features = all.genes.sobj, vars.to.regress = 'percent.mt') 
+
+#scale.top.sobj <- ScaleData(sobj) #, vars.to.regress = 'percent.mt') # here we only scale the 2000 previous highly variable genes
+```
+
+#### Unsupervised clustering: PCA ####
+
+##### Description: #####
+
+* Here, we carry out a linear dimensional reduction using PCA on the scaled data containing the most variable genes (as chosen before):
+  - Before putting the highly variable genes into PCA, we will specifically scale those genes so that they have a mean of 0 and a variance of 1. More specifically, For each highly variable gene, a regression model is build using that gene's expression level across all cells, and then shift the residual to zero and divided it by standard deviation.
+  - We are essentially scaling and centering these genes in the dataset, which standardizes the range of expression values. This will regresses out unwanted sources of variation such as technical noise and each gene will contributes similarly to the downstream steps. As a result, the PCA and clustering will not be dominated by the signal of a few highly-expressed genes.
+  
+* The reason that we do a PCA is because we simply cannot work with this ultra high dimensional data for the downstream analysis. Instead we can look at which of the most variable genes explains most of the variance in the data.
+  
+* Note the PCA is a suitable method, but has some disadvantages:
+  - (I still believe that ML would be a better option here, but it is not benchmarked in single-cell data as an alternative to PCA).
+  - PCA is very popular, but fails to capture all signals considering that 2D dimensionality reduction cannot capture faint signal.
+
+##### Results: #####
+
+* PCA elbow plot:   We will find the optimal number of dimensions for downstream analysis, based on:
+  - PC where change in percent variation is more than 1%.
+  - Or, PCs representing cumulative percent >90% and less than 5% associated with the single PC.
+  - With each PC representing combined information of positive and negative correlated gene sets, the top PCs represent strong compression of the total dataset that can be used for further dimensionality reduction and clustering. If you find less than 10 PCs in the elbow plot, your data likely contains too few relevant genes for successful clustering. After all, we are looking for genes that can explain the variance in your cells, and if no such genes can be found (or too few of them) then the downstream steps will have difficulties to find the differences between your cells. However, if you are working with low-complexity data (e.g. similar cell types in different biological states) then you should to find fewer number of PCs.
+  - The dashed red line in the plot shows the optimal number PC dimensions.
+```{r scaling and PCA, fig.height=4, fig.width=8, echo=FALSE, results='hide', include=FALSE}
+#################### Chunk #################### 
+# // This chunk takes the scaled normalized matrix and performs PCA on n user defined highly variable features
+# // The stored PCA information will leveraged by a second function to calculate the optimal PCs for clustering
+####################       #################### 
+
+########## Function ########## 
+# // This function runs a PCA on the n user defined (or default) most variable each object 
+# // By default up to 100 PCs are calculated
+# // Input file must be a vector of Seurat objects
+run_PCA <- function(sobj) {
+  sobj <- RunPCA(sobj, features = VariableFeatures(object = sobj))
+  return(sobj)
+}
+# Execute run_PCA function
+sobj_list <- sapply(sobj_list, run_PCA)
+
+########## Function ########## 
+# // This function calculates returns the optimal number of PCs for clustering.
+# // Method1: last PC where change in percent variation is more than 0.5%
+# // Method2: PCs representing cumulative percent >90% and less than 5% associated with the single PC
+# // Input file must be a vector of Seurat objects
+optimal_PCs <- function(sobj) {
+  pc.stdev.percentage <- sobj[["pca"]]@stdev / sum(sobj[["pca"]]@stdev) * 100 # find standard deviation for each PC
+  cumu.percentage <- cumsum(pc.stdev.percentage) # find cumulative percentages for PCs
+  co1 <- which(cumu.percentage > 90 & pc.stdev.percentage < 5)[1] # find PCs representing cumulative percent >90% and less than 5% associated with the single PC
+  co1 # list PC
+  co2 <- sort(which((pc.stdev.percentage[1:length(pc.stdev.percentage) - 1] - pc.stdev.percentage[2:length(pc.stdev.percentage)]) > 0.01), 
+              decreasing = T)[1] #+ 1 # find last PC where change in percent variation is more than 1% and add and extra PC to it
+  co2 # list PC
+  pcs <- min(co1, co2) # find the minimum PC from the 2 methods used above
+  pcs < max(pcs) # list P
+  pc.dims <- 1:pcs # we will use these dimension later on
+  
+  plot_df <- data.frame(pc.stdev.percentage = pc.stdev.percentage, # put PC values into dataframe for plotting
+                      cumu = cumu.percentage, 
+                      rank = 1:length(pc.stdev.percentage))
+  
+  opt_PC_plot <- ggplot(plot_df, aes(cumu.percentage, pc.stdev.percentage, label = rank, color = rank > pcs)) + 
+    geom_text() + geom_vline(xintercept = 90, color = "grey") + 
+    geom_hline(yintercept = min(pc.stdev.percentage[pc.stdev.percentage > 5]), color = "grey") + theme_bw() # visualize PCs to use in elbow plot
+  print(opt_PC_plot)
+  
+  return(list(pc.dims))
+}
+# Execute optimal_PC function
+pc.dims <- sapply(sobj_list, optimal_PCs)
+
+
+#print(ileum.org.incl.intr.seu[['pca']], dims = 1:5, nfeatures = 5)
+#VizDimLoadings(ileum.org.incl.intr.seu, dims = 1:2, reduction = 'pca')
+# DimPlot(ileum.org.incl.intr.seu, reduction = 'pca')
+```
+
+```{r PCA elbow plot to fins most significant PCs, fig.height=5, fig.width=6, echo=FALSE}
+#################### Chunk #################### 
+# // This chunk takes plots an Elbow with optimal PCs being displayed
+####################       #################### 
+
+# Plot and Elbow to visualize the optimal PC based
+for (i in 1:length(x = pc.dims)) {
+  e1 <- ElbowPlot(sobj_list[[i]], ndims = 50) + 
+    ggtitle(paste("Significant PCs", sobj_list[[i]]@meta.data[1,1], sep = " - ")) + 
+    geom_vline(xintercept = max(unlist(pc.dims[[i]])), linetype="dashed", color = "red", size=1) + 
+    theme(plot.title = element_text(size = 12))
+  print(e1) ####### SAVE FOR PIPELINE
+}
+```
+
+```{r PCA selection, fig.height=17, fig.width=9, echo=FALSE, results='hide', include=FALSE}
+# // This function returns heatmaps of the top 30 PCs meta genes of 500 cells per PC
+# // Input file must be a vector of Seurat objects
+#run_PCA_heatman <- function(sobj) {
+#  PCA_heatmap <- DimHeatmap(sobj, dims = 1:30, cells = 500, balanced = TRUE) # fast = FALSE uses ggplot 
+#  print(PCA_heatmap)
+#  return()
+#}
+
+# Execute run_PCA_heatman function
+#PCA_heatmaps <- sapply(sobj_list, run_PCA_heatman)
+```
+
+#### Final clustering (KNN (SNN)) using the most explained PCs and projection onto UMAP: ####
+
+##### Description: #####
+
+* Original Louvain algorithm:
+  - Based on the Euclidean distance in the PCA space, the pipeline carries out a K-nearest neighbor graph (k=20 by default) and refines the edge between any two cells based on shared overlap between their expression patterns using the traditional Jaccard similarity technique. 
+  - The clusters are then constructed by joining the groups interactively until it fully converges using the Louvain algorithm. Cells are then moved to a non-linear UMAP space for visualization. Here, we find that by using a resolution of 0.8, Louvain does a decent job in identifying sufficient number of communities for both high complexity (porcine ileum, with immune) and low-complexity data (porcine ileum organoid or tissue, no immune).
+  - To resolution of 0.8 is set as default, but more research is required to use an adaptive resolution depending on the type of data as this parameter could greatly impact the number preliminary clusters that will be used by the ambient RNA correcting algorithm. As an experimental feature, you are allowed to change the resolution, which will impact the final number of cell clusters (not recommended).
+  - In case you end up with too few cluster by the default settings, then it worth to try a resolution >0.8. If you have too few clusters, the ambient RNA correction might become biased (more on this later...).
+
+##### Results: #####
+
+* UMAP plots:   Number of genes/UMIs/MTs are shown per cell within each cluster:
+  - These plots can give us an idea which cells (within clusters) contain low, medium or high number of genes and total UMIs. 
+  - Note that high number of genes or UMIs is not necessarily a bad thing, but is still highlighted with "purple"
+  - In case of a failed experiment (low number of genes) due to significant population of cells with a low RNA content, these plots can show which groups of cells are affected. And if the same clusters contain high percentage MT genes, then it is likely that those cells are low-quality or dead.
+  - How many cluster do you observe in total? Do you expect to see more (or less) based on what you already know about your samples?
+```{r make umap, fig.height=5, fig.width=6, echo=FALSE, message=FALSE, warning=FALSE, results='hide'}
+#################### Chunk #################### 
+# // This chunk performs the unsupervised Louvain graph based clustering using the optimal PCA metafeatures from the n user defined highly variable genes
+# // Using the values of the most relevant PCs the cells are forwarded into a UMAP projection
+####################       #################### 
+
+# clustering by calculating k-nearest neighbors and construct the SNN graph by the original Louvain algorithm using the optimal PCA dimensions
+for (i in 1:length(x = sample_names)) {
+  sobj_list[[i]] <- FindNeighbors(sobj_list[[i]], k.param = 20, dims = unlist(pc.dims[[i]])) # Find neighbors on by using KNN (k=20) and SNN neighborhood overlap using jaccard index.
+  sobj_list[[i]] <- FindClusters(sobj_list[[i]], resolution = umap.resolution) # We do net yet select different resolutions as this is unnecessary for now... 
+  # Look at cluster IDs of the first 5 cells
+  # head(Idents(ileum.org.incl.intr.seu), 5). # test code
+  # Calculate and make the UMAN and T-SNE clusters
+  sobj_list[[i]] <- RunUMAP(sobj_list[[i]], dims = unlist(pc.dims[[i]]))
+#  sobj_list[[i]] <- RunTSNE(sobj_list[[i]], dims = unlist(pc.dims[[1]]))
+  d1 <- DimPlot(sobj_list[[i]], reduction = 'umap', label = FALSE, pt.size = 0.05) + 
+    ggtitle(paste("SNN: UMAP", sobj_list[[i]]@meta.data[1,1], sep = " - "), subtitle = paste("Number of Cells (n = ", paste(dim(sobj_list[[i]])[2], ")", sep = ""))) + 
+    ylab("UMAP 1") + xlab("UMAP 2") + theme(plot.title = element_text(size = 12))
+  d2 <- FeaturePlot(sobj_list[[i]], features="nFeature_RNA", label=TRUE, pt.size = 0.05) + 
+    ggtitle(paste(sobj_list[[i]]@meta.data[1,1], sep = " - "), subtitle = "Gene Count per Cluster/Cell") + 
+    ylab("UMAP 1") + xlab("UMAP 2") + labs(fill = "nGenes", colour = "nGenes", labels = "nGenes" ) + scale_colour_gradientn(colours = c('red', "green", 'purple'), values = c(0, (200 / max(sobj_list[[1]][["nFeature_RNA"]]$nFeature_RNA)), 1)) + theme(plot.title = element_text(size = 12))
+#  d2 <- DimPlot(sobj_list[[i]], reduction = 'tsne', label = TRUE) + ggtitle(paste("SNN: t-SNE", sobj_list[[i]]@meta.data[1,1], sep = " - ")) + xlab("t-SNE 2")
+  d3 <- FeaturePlot(sobj_list[[i]], features="nCount_RNA", label=TRUE, pt.size = 0.05) + 
+    ggtitle(paste(sobj_list[[i]]@meta.data[1,1], sep = " - "), subtitle = "UMI Count per Cluster/Cell") + 
+    ylab("UMAP 1") + xlab("UMAP 2") + labs(fill = "nUMIs", colour = "nUMIs", labels = "nUMIs" ) + scale_colour_gradientn(colours = c('red', "green", 'purple'), values = c(0, (500 / max(sobj_list[[1]][["nCount_RNA"]]$nCount_RNA)), 1)) + theme(plot.title = element_text(size = 12))
+  d4 <- FeaturePlot(sobj_list[[i]], features="percent.mt", label=TRUE, pt.size = 0.05) + 
+    ggtitle(paste(sobj_list[[i]]@meta.data[1,1], sep = " - "), subtitle = "MT Percentage per Cluster/Cell") + 
+    ylab("UMAP 1") + xlab("UMAP 2") + labs(fill = "MT %", colour = "MT %", labels = "MT %" ) + 
+    scale_colour_gradientn(colours = c('green', 'red', 'red4'), values = c(0, (((max(sobj_list[[i]][["percent.mt"]]$percent.mt) * 4) / 100) / 10), 1)) + theme(plot.title = element_text(size = 12))
+  # Print the plots
+  print(d1)
+  print(d2)
+  print(d3)
+  print(d4)
+}
+
+
+# Scaled color gradient values for "scale_colour_gradientn" mid values
+#(((max(sobj_list[[1]][["percent.mt"]]$percent.mt) * 100) / 100) / 10) # percent.mt
+#(200 / max(sobj_list[[1]][["nFeature_RNA"]]$nFeature_RNA)) # nFeature_RNA
+#(500 / max(sobj_list[[1]][["nCount_RNA"]]$nCount_RNA)) # nCount_RNA
+
+#"nFeature_RNA", "nCount_RNA", "percent.mt"
+```
+
+#### SoupX Ambient RNA Removal: ####
+
+##### Description: #####
+
+* Terminology:
+  - Total contamination is the fraction of ambient RNA (for each gene) estimated from (semi)-empty droplets from the raw counts matrix.
+  - Contamination fractions is the the estimated the number transcripts that are contributing to the previously calculated background contamination (from empty droplets) using the expression of several marker genes between cell-clusters where it does not belong. Here it is assumed that the abundance of genes that make up the background are not different between the cells. 
+
+* The aim of SoupX is to estimate what fraction of the transcripts are derived as ambient in each droplet and to generate a corrected gene counts matrix with the contaminated counts removed. The algorthm take the following steps:
+  - It first calculates the expression profile of the total contamination by estimating the ambient RNA expression from the raw counts-matrix obtained from the CellRanger output. Regardless of the user choice, in this step we always utilize the raw counts as this data contains information of empty droplets, which is an excellent candidate to analyze cell-free droplets that may contain ambient RNA for each gene. (If for some reason the raw counts are not available, SoupX will not run, and the pipeline will continue without the correction of ambient RNA).
+  - Once the total contamination has been estimated, SoupX calculates the cell specific contamination level by using the previously found cell clusters. The point here is to find a set of genes in each cell that is known not be expressed in others, and then estimate the contamination fraction using the expression of that given gene in cells it does not belong. If you have too few cluster (due to lack highly variable genes and insufficient number PC dimensions), then it is advised to change number of UMAP dimensions >0.8. Try it out and see if anything improves. Usually, low number of clusters suggests low-complexity data (either biological or technical reasons). Remember that you can also leave out ambient RNA correction when dealing low-complexity if higher UMAP dimensions do not improve anything.
+  - With the estimated contamination fraction and the background expression profile at our disposal, the contaminated counts for each gene within each cell can then be corrected.
+
+* Keep in mind that working with the raw counts matrix only will automatically filter cells/droplets that have less than 100 genes. This is a less aggressive filtering when compared to using the filtered counts matrix where Cellranger filtered out cells/droplets that contaied <500 UMIs. For this reason, do not be shocked to find higher ambient RNA contamination when working with the raw counts. The data will be successfully corrected most of the time (unless you are dealing with many degraded RNAs due to failed experiment).
+
+##### Results: #####
+
+* Contamination Density plot (First plot):   
+- Representing the probability distribution of estimated contamination fraction. The probability density is calculated by the aggregated set of genes per cells-cluster that have been used to find the contamination fraction. The final contamination fraction is then assigned to the one that occurs with the highest probability (indicated with a vertical red line). A probability distribution with a flat line (no clear peak) indicates failure of SoupX as none of the sets of genes have a preferred contamination fraction, while true estimates are more likely to have the same probability.
+
+* Barplot:
+  - Representing the percentage of ambient RNA detected and removed from the data. A contamination level of around 10% is typical for non-nuclei fresh tissue sample.
+
+* Affected Markers Soup Markers (UMAP): 
+  - Representing the expression of marker candidates that were used for the estimation of the contamination fraction and their level of correction (pre and post Soup correction). By default, top 3 markers are used for plotting, but the user is provided with the option to choose anything between 0-100. 
+
+* Affected User Genes (UMAP): 
+  - Representing the expression of user-defined genes and level of correction. For this to work the user must fill in the genes of interest in the gene.txt file.
+  
+* Most Affected Genes (UMAP): 
+  - Representing the expression of most-affected genes and level of correction. As the most-affected genes are not expressed by many cells, these plots might not be very representative. This option is tuned off by default, but the user may turn it on and select the number plots.
+
+* Colors in the UMAP plots:
+  - Red dots - the gene is strongly corrected in the cell
+  - White dots - the gene is weakly corrected in the cell
+  - Grey dots - Nothing happened to that cell
+```{r Soupx, fig.height=6, fig.width=9, echo=FALSE, message=FALSE, warning=FALSE}
+#################### Chunk #################### 
+# // This chunk eliminates and corrects for ambient RNA using SoupX
+# // Based on user parameters, the effect of ambient RNA correction will be displayed in a UMAP projection
+# // A ambient RNA corrected raw count matrix will be returned and saved on user defined path
+####################       #################### 
+
+if (low.complexity == "yes" & str_length(low.complexity) != 0) { # If we have low complexity data or wrong parameter given, then SoupX will be skipped
+  print("Correction for ambient RNA will not be carried out")
+} else {
+  if (str_length(counts_path_raw) != 0) {  # If we have a raw count matrix data and low.complexity parameter is not given or no, then SoupX will run
+    sobj_list_filtered <- list() # make empty list to append Seurat Soupx cleaned Seurat objects in the loop below (only in case we use different approuch)
+    for (i in 1:length(x = sample_names)) {
+      sobj_list[[i]][["original.counts"]] <- CreateAssayObject(counts = sobj_list[[i]]@assays$RNA$counts) # keep original count to make comparison for later
+      # run Soupx:
+      soup_channel = SoupChannel(d10x.data.raw[[i]], sobj_list[[i]]@assays$RNA$counts) # create soup channels by passing in the raw 10X matrix and the Seurat counts matrix
+      soup_channel = setClusters(soup_channel, sobj_list[[i]]$seurat_clusters) # We set the clusters previously found, as these clusters are essential to find highly specific marker genes.   
+      soup_channel = autoEstCont(soup_channel, doPlot=TRUE, priorRho = 0.05, priorRhoStdDev = 0.1, rhoMaxFDR = 0.2, forceAccept=TRUE) # estimate the contamination fraction using markers from clusters
+      out = adjustCounts(soup_channel, roundToInt = TRUE) # From the soup channel we get the adjusted counts matrix and round it to the nearest integer........ ########## SAFE THE OUTPUTS OF AMBIENT RNA
+  
+      # Save the Ambient RNA corrected Matrix
+      if (dir.exists(file.path(paste(parent_directory, paste(sample_path[i], "/new-outs/counts", sep = ""), sep = "/")))) {
+        write10xCounts(paste(parent_directory, paste(sample_path[i], "/new-outs/counts/SoupCorrectedCounts", sep = ""), sep = "/"), out, version = "3", overwrite = TRUE)
+        } else {
+          dir.create(file.path(paste(parent_directory, paste(sample_path[i], "/new-outs/counts", sep = ""), sep = "/")), recursive = TRUE)
+          write10xCounts(paste(parent_directory, paste(sample_path[i], "/new-outs/counts/SoupCorrectedCounts", sep = ""), sep = "/"), out, version = "3", overwrite = TRUE)
+          }
+  
+      # update the RNA counts with the soup corrected matrix!!!
+      # NOTE that we do this twice, for two separate slots (even though it is the same), because the developers of Seurat_v5 thought it was cool to FUCK things up!
+      # If you are updating the Seurat package in the future, please make sure the two line below are compatible. If not, then get ready for some FUCKING sleepless nights...
+      sobj_list[[i]]@assays$RNA$counts <- out 
+      #sobj_list[[i]]@assays$RNA@layers$counts <- out # for  sueratv5
+
+      # Add the clustering coordinates of our Seurat objects to the Soup channel
+      UMAP1 <- data.frame(sobj_list[[i]]@reductions[["umap"]]@cell.embeddings)[ , 1] # extract the UMAP coordinates from Seurat object
+      UMAP2 <- data.frame(sobj_list[[i]]@reductions[["umap"]]@cell.embeddings)[ , 2]
+      soup_channel$metaData[["UMAP1"]] <- UMAP1 # Append the UMAP coordinates to the soup_channel$metaData
+      soup_channel$metaData[["UMAP2"]] <- UMAP2
+      soup_channel[["DR"]] <- unlist(c("UMAP1", "UMAP2")) # add a (character [2]) of "UMAP1""UMAP2" to the soup_channel
+      soup_metadata <- soup_channel$metaData # soup channel metadata data saving
+  
+      # Calculate the percentage of contaminated RNA (UMI) remove
+      percentage_contamination <- paste("Percentage of Ambient RNA (UMI) removed:", 
+                                       round((1 - sum(sobj_list[[i]]@assays$RNA$counts)/sum(sobj_list[[i]]@assays$original.counts@counts)) * 100, digits = 2), sep = " ", 
+                                       paste(sobj_list[[i]]@meta.data[1,1])) 
+      print(percentage_contamination)
+  
+      # Make data frame of ambient RNA contamination levels and make barplot
+      data.frame.cont <- data.frame(sample_names, round((1 - sum(sobj_list[[i]]@assays$RNA$counts)/sum(sobj_list[[i]]@assays$original.counts@counts)) * 100, digits = 2))
+      # plot bars
+      S1 <- ggplot(data.frame.cont, aes(x = factor(sample_names, levels = sample_names), y = round((1 - sum(sobj_list[[i]]@assays$RNA$counts)/sum(sobj_list[[i]]@assays$original.counts@counts)) * 100, digits = 2))) + 
+        geom_bar(stat = "identity", position = "dodge", alpha = 0.5, colour = "black", width = 0.5) + 
+        ylim(0, round((1 - sum(sobj_list[[i]]@assays$RNA$counts)/sum(sobj_list[[i]]@assays$original.counts@counts)) * 100 + 5)) + 
+        geom_text(label = round((1 - sum(sobj_list[[i]]@assays$RNA$counts)/sum(sobj_list[[i]]@assays$original.counts@counts)) * 100, digits = 2), position = position_dodge(width = 1),vjust = -0.5, size = 4) + # value above bar
+        geom_hline(yintercept = 10, linetype="dashed", color = "red", size=1) +
+        geom_hline(yintercept = 5, linetype="dashed", color = "orange", size=1) + 
+        geom_hline(yintercept = 2.5, linetype="dashed", color = "green", size=1) +
+        theme_bw() + 
+        theme(axis.text.x = element_text(angle = 0, hjust = 0.5, size = 9.5)) + 
+        theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) + 
+        labs(x="", y="Ambient RNA Removed (%)") + scale_fill_grey() +
+        theme(aspect.ratio = 5.5) # + theme(legend.position = c(0.1, 0.75))
+      print(S1)
+  
+      # Analyze output and plot markers, random genes, most affected, or user given markers:
+      # But first we setup the number of plots defined by  user options or default
+      if (is.na(n.markers.genes) == TRUE) {
+        markers_by_soup <- soup_channel[["fit"]][["markersUsed"]][["gene"]][1:3] # 3 markers used by by default
+      } else {
+        markers_by_soup <- soup_channel[["fit"]][["markersUsed"]][["gene"]][1:n.markers.genes] # or user parameter
+      }
+      if (is.na(n.highly_affected.genes) == TRUE) {
+        exp_before.soup <- names(tail(sort((rowSums(soup_channel$toc > 0) - rowSums(out > 0))/rowSums(soup_channel$toc > 0)), n = 0)) 
+      } else {
+        exp_before.soup <- names(tail(sort((rowSums(soup_channel$toc > 0) - rowSums(out > 0))/rowSums(soup_channel$toc > 0)), n = n.highly_affected.genes)) 
+        }
+      
+      # print(exp_before.soup)
+      # radnom_genes <- sample(x = rownames(data.frame(soup_channel$toc)), size = 10, replace = FALSE) # 4 Randomly selected genes to check affection after correction
+
+      # plot the most marker genes before and after correction:
+      if (length(canonical_markers) > 0 | (n.markers.genes > 0 & length(canonical_markers) > 0)) {
+        if (n.markers.genes > 0 & is.na(n.markers.genes) == FALSE) {
+          for (j in markers_by_soup){
+            soup_metadata[j] = soup_channel$toc[j, ] 
+            # Plot
+            print(plotMarkerMap(soup_channel, j, pointSize = 1.5) + 
+                    ggtitle(paste("Expressiong of: ", paste(j, "Assuming All Cells are Soup", sep = " (Soup marker) - ")), subtitle = sobj_list[[i]]@meta.data[1,1]) + 
+                    ylab("UMAP 1") + xlab("UMAP 2"))
+            print(plotChangeMap(soup_channel, out, j, pointSize = 1.5) + 
+                    ggtitle(paste("Change in Expression of: ", paste(j, "Post Soup Correction", sep = " (Soup marker) - ")), subtitle = sobj_list[[i]]@meta.data[1,1]) + 
+                    ylab("UMAP 1") + xlab("UMAP 2"))
+            }
+          } else { # Eh, some sloppy coding with else and no argument
+            }
+        for (j in canonical_markers) {
+          soup_metadata[j] = soup_channel$toc[j, ] # add the genes to be analyzed tot the metadata columns
+           # if we assumed all cells were nothing but soup, which cells still show higher than expected expression for the gene (TRUE = expression levels higher than expected if cell was just soup, so likely real expression). This just gives us an idea of soup expression, this is NOT a formal analysis used for removing the soup RNA.
+          print(plotMarkerMap(soup_channel, j, pointSize = 1.5) + 
+                  ggtitle(paste("Expressiong of: ", paste(j, "Assuming All Cells are Soup", sep = " (marker) - ")), subtitle = sobj_list[[i]]@meta.data[1,1]) + 
+                  ylab("UMAP 1") + xlab("UMAP 2"))
+          # Change in expression after Soup correction
+          print(plotChangeMap(soup_channel, out, j, pointSize = 1.5) + 
+                  ggtitle(paste("Change in Expression of: ", paste(j, "Post Soup Correction", sep = " (marker) - ")), subtitle = sobj_list[[i]]@meta.data[1,1]) + 
+                  ylab("UMAP 1") + xlab("UMAP 2"))
+          }
+        } else { # if markers are not provided by the user, then plot the top 5 marker genes used by SoupX
+          for (j in markers_by_soup){
+            soup_metadata[j] = soup_channel$toc[j, ] 
+            # Plot
+            print(plotMarkerMap(soup_channel, j, pointSize = 1.5) + 
+                    ggtitle(paste("Expressiong of: ", paste(j, "Assuming All Cells are Soup", sep = " (Soup marker) - ")), subtitle = sobj_list[[i]]@meta.data[1,1]) + 
+                    ylab("UMAP 1") + xlab("UMAP 2"))
+            print(plotChangeMap(soup_channel, out, j, pointSize = 1.5) + 
+                    ggtitle(paste("Change in Expression of: ", paste(j, "Post Soup Correction", sep = " (Soup marker) - ")), subtitle = sobj_list[[i]]@meta.data[1,1]) + 
+                    ylab("UMAP 1") + xlab("UMAP 2"))
+            }
+          }
+  
+      # plot the most affected genes before and after correction 
+      for (j in exp_before.soup) {
+        soup_metadata[j] = soup_channel$toc[j, ] 
+        #ggplot(soup_metadata, aes(UMAP1, UMAP2)) + geom_point(aes(colour = CD3E > 0), size=0.2) + ggtitle(paste("Expressiong of: ", paste(j, "Pre Soup Correction", sep = " - ")), subtitle = sobj_list[[2]]@meta.data[1,1]) + ylab("UMAP 1") + xlab("UMAP 2")
+        print(plotMarkerMap(soup_channel, j, pointSize = 1) + 
+                ggtitle(paste("Expressiong of: ", paste(j, "Assuming All Cells are Soup", sep = " (Most affected) - ")), subtitle = sobj_list[[i]]@meta.data[1,1]) + 
+                ylab("UMAP 1") + xlab("UMAP 2"))
+        print(plotChangeMap(soup_channel, out, j) + 
+                ggtitle(paste("Change in Expression of: ", paste(j, "Post Soup Correction", sep = " (Most affected) - ")), subtitle = sobj_list[[i]]@meta.data[1,1]) + 
+                ylab("UMAP 1") + xlab("UMAP 2"))
+        }
+    }
+  } else { # else we not run soupx if we do not have a raw count matrix for the calculation of ambient RNA
+    print("Due to lack of raw count matrix, correction for ambient RNA will not be carried out")
+    }
+  }
+```
+
+#### Extensive filtering ####
+
+##### Description: #####
+
+* By default, we automatically filter out cells with a percentage of MT reads above 10%, with gene and transcript counts below the 2% quantile as a lower limit. No filtering is applied on the higher limit as these cells could represent doublets that we want to classify by DoubletFinder instead of removing them by force. However, if the user has prior knowledge on the dataset, filtering can also be applied by user-defined cutoff values for the number of genes, transcripts and percentage of MT reads. Additionally, the user may also adjust the upper and lower quantiles for the parameters mentioned above. It is important to consider that by removing cell in the upper limit by user-defined cutoff values or quantiles, there is a good chance that true doublets are being removed before identified in an algorithmic fashion.
+
+* Note that our default parameters have been performing well in high complexity (porcine ileum and colon tissue, with immune) and low complexity data (porcine ileum organoid) without loosing many cell-types (including some rare immune cells with low number of genes/transcripts).
+
+##### Results: #####
+
+* Now take a look in the chunk below... how many cells do you have? Is it significantly lower than before?
+  - (The cells are called 'samples').
+  - (Ignore the inflated number of 'feautures'. These are the number of genes from two assays in Seurat).
+```{r data filtering, fig.height=5, fig.width=12, echo=FALSE, warning=FALSE}
+#################### Chunk #################### 
+# // This chunk performs an extensive filtering based on user parameters (or default if not specified)
+# // nFeature_RNA (nGenes), nCount_RNA (nUMIs) and MT percentage will be considered
+# // By default 2-98% quantile are considered for the parameters mentioned above with percent.mt < 10
+# // Cell will be re-clustered in case user defined parameters are too extreme (resulting in loss of many cells)
+####################       #################### 
+
+########## Function ########## 
+# // This function filters and returns a cleaned up Seurat object
+# // Input file must be a vector of Seurat objects
+ext_filtering <- function(sobj) {
+  if (is.na(featureLOW) != TRUE | is.na(countLOW) != TRUE | is.na(featureHIGH) != TRUE | is.na(countHIGH) != TRUE) { # we exclude mt.Con because this parameter always contains a value
+    if (featureLOW >= 0 & featureLOW <= max(sobj[["nFeature_RNA"]]$nFeature_RNA) & is.na(featureLOW) == FALSE) {
+      sobj <- subset(sobj, subset = nFeature_RNA >= featureLOW)
+      } else { }
+    if (countLOW >= 0 & countLOW <= max(sobj[["nCount_RNA"]]$nCount_RNA) & is.na(countLOW) == FALSE) {
+      sobj <- subset(sobj, subset = nCount_RNA >= countLOW)
+      } else { }
+    if (featureHIGH >= 0 & featureHIGH >= min(sobj[["nFeature_RNA"]]$nFeature_RNA) & is.na(featureHIGH) == FALSE) {
+      sobj <- subset(sobj, subset = nFeature_RNA <= featureHIGH)
+      } else { }
+    if (countHIGH >= 0 & countHIGH >= min(sobj[["nCount_RNA"]]$nCount_RNA) & is.na(countHIGH) == FALSE) {
+      sobj <- subset(sobj, subset = nCount_RNA <= countHIGH) 
+      } else { }
+    if (mt.Con >= 0 & mt.Con <= max(sobj[["percent.mt"]]$percent.mt) & is.na(mt.Con) == FALSE) {
+      sobj <- subset(sobj, subset = percent.mt <= if (mt.Con >= 0 & mt.Con <= max(sobj[["percent.mt"]]$percent.mt) & is.na(mt.Con) == FALSE){mt.Con = mt.Con}else{mt.Con = 10}) 
+      } else { }
+  } else { 
+    # Else if user input not specified
+    minCov=1000 # if a sample has a good coverage (>=minCov), then don't set a lower threshold for nCount, it's already pretty good. 
+    if (min(sobj$nCount_RNA) >= minCov) {  # if minimum UMI count is >= 1000
+      countLOW = min(sobj$nCount_RNA)  # then, set to lowest nCount if we have good coverage
+      } else { # Otherwise use the quantile rule
+        countLOW = quantile(sobj$nCount_RNA, prob=if (UMI.quantile.low >= 0 & UMI.quantile.low <= 1 & is.na(UMI.quantile.low) == FALSE){
+          UMI.quantile.low = UMI.quantile.low}else{UMI.quantile.low = 0.02}) 
+        } # else set to 2% quantile
+    countHIGH = quantile(sobj$nCount_RNA, prob=if (UMI.quantile.high >= 0 & UMI.quantile.high <= 1 & is.na(UMI.quantile.high) == FALSE){
+      UMI.quantile.high = UMI.quantile.high}else{UMI.quantile.high = 1.0}) # Set on 1.0 be default, because it cn interfere with DoubletFinder, but 0.98 is reasonable is user likes specify that.
+    featureLOW = quantile(sobj$nFeature_RNA, prob=if(feature.quantile.low >= 0 & feature.quantile.low <= 1 & is.na(feature.quantile.low) == FALSE){
+      feature.quantile.low = feature.quantile.low}else{feature.quantile.low = 0.02}) 
+    featureHIGH = quantile(sobj$nFeature_RNA, prob=if (feature.quantile.high >= 0 & feature.quantile.high <= 1 & is.na(feature.quantile.high) == FALSE){
+      feature.quantile.high = feature.quantile.high}else{feature.quantile.high = 1.0}) 
+    # filter based on on visualization an parameters above.
+    sobj <- subset(sobj, subset = nFeature_RNA >= featureLOW & nFeature_RNA <= featureHIGH & nCount_RNA >= countLOW & nCount_RNA <= countHIGH & percent.mt <= if (mt.Con >= 0 & mt.Con <= max(sobj[["percent.mt"]]$percent.mt) & is.na(mt.Con) == FALSE){mt.Con = mt.Con}else{mt.Con = 10})
+    # sobj <- subset(sobj, subset = nFeature_RNA > featureLOW & nCount_RNA > countLOW & nCount_RNA < countHIGH & nFeature_RNA < featureHIGH & percent.mt < 10) # USE THIS LINE IF INCLUDING featureHIGH and countLOW parameters
+  
+    # After initial filtering, we could save one backup in order to apply ambient and multiplet removal on this object
+    # sobj.filtered <- subset(sobj, subset = nFeature_RNA > featureLOW & nCount_RNA > countLOW  & nCount_RNA < countHIGH & percent.mt < 10)
+  }
+  return(sobj)
+  }
+  
+# Apply function and print the output for control
+sobj_list <- sapply(sobj_list, ext_filtering)
+for (i in 1:length(x = sobj_list)) {
+  print(sobj_list[i])
+}
+
+
+
+
+####################### TESTING CODE PIPE ########################
+
+#if (featureLOW > 0 & is.na(featureLOW) == FALSE) {
+#  sobj <- subset(sobj, subset = nFeature_RNA > featureLOW)
+#} else { }
+#if (countLOW > 0 & is.na(countLOW) == FALSE) {
+#  sobj <- subset(sobj, subset = nCount_RNA > countLOW)
+#} else { }
+#if (featureHIGH > 0 & is.na(featureHIGH) == FALSE) {
+#  sobj <- subset(sobj, subset = nFeature_RNA < featureHIGH)
+#} else { }
+#if (countHIGH > 0 & is.na(countHIGH) == FALSE) {
+#  sobj <- subset(sobj, subset = nCount_RNA < countHIGH) 
+#} else { }
+#if (percent.mt > 0 & is.na(percent.mt) == FALSE) {
+#  sobj <- subset(sobj, subset = percent.mt < mt.Con) 
+#} else { }
+
+#rm(sobj1)
+
+#quantile(sobj_list[[1]]$nFeature_RNA, prob=0.02) 
+#quantile(sobj_list[[1]]$nCount_RNA, prob=0.02)
+
+#max(sobj_list[[i]][["percent.mt"]]$percent.mt)
+#max(sobj_list[[i]][["nCount_RNA"]]$nCount_RNA) 
+#max(sobj_list[[i]][["nFeature_RNA"]]$nFeature_RNA)
+#min(sobj_list[[i]][["nCount_RNA"]]$nCount_RNA) 
+#min(sobj_list[[i]][["nFeature_RNA"]]$nFeature_RNA)
+
+####################### TESTING CODE FOR SINGLETS ########################
+#minCov=1000 #if a sample has a good coverage (>=minCov), then don't set a lower thresold for nCount, it's already pretty good. 
+#if (min(sobj$nCount_RNA) >= minCov)  # if minimum UMI count is >= 1000
+#    { countLOW = min(sobj$nCount_RNA)  # then, set to lowest nCount if we have good coverage
+#  } else { countLOW=quantile(sobj$nCount_RNA, prob=c(0.02)) } # else set to 2% quantile
+#countHIGH = quantile(sobj$nCount_RNA, prob=0.99) # and to 99% quantile for the upper count, because these high UMI-count cells will also be filtered out by the DoubletFinder or reduced when adjusting for ambient RNA counts
+#featureLOW = quantile(sobj$nFeature_RNA, prob=0.02)  # minimum number of genes set to 2% quantile
+#featureHIGH = quantile(sobj$nFeature_RNA, prob=0.99)
+# filter based on on visualization an parameters above.
+#sobj <- subset(sobj, subset = nFeature_RNA > featureLOW & nCount_RNA > countLOW  & nCount_RNA < countHIGH & percent.mt < 10)
+#sobj
+
+# After initial filtering, we will save one backup in order to apply ambient and multiplet removal on this object
+#sobj.filtered <- subset(sobj, subset = nFeature_RNA > featureLOW & nCount_RNA > countLOW  & nCount_RNA < countHIGH & percent.mt < 10)
+```
+
+#### Multiplet Removal ####
+
+##### Description: #####
+
+* The DoubletFinder algorithm first generates artificial doublets by randomly merging different cells from the data. In total, one artificial doublet is generated per four cells. We are essentially creating a new dataset where artificial doublets are added to the mix. By doing so, the artificial doublets resemble droplets that may contain two completely different cell types. Arguably, the same process likely occurs as true doublets form in the microfluidic container. DoubletFinder then carries out PCAs using our previously determined optimal number of PC-dimensions (during the unsupervised clustering step). The PC distance matrix is then used to find artificial K-nearest neighbors to define where the true and the artificial doublets share the same neighborhood. This step is recursive and computational expensive and thus we allow the user to choose the number of CPU-cores (4 cores by default). Once complete, we remove the added artificial doublets and the pre-defined proportion of identified real doublets from the dataset.
+
+* Since there is a linear relationship between the percentage of true doublets and number of recovered cells for the "Single Cell 3' Gene Expression Assay", we implemented this linearity in the algorithm to ensure the model does not over or underestimate the true doublets in the dataset. 
+
+* The relationship between the number of recovered cells and true doublets is provided by 10X (https://kb.10xgenomics.com/hc/en-us/articles/360001378811-What-is-the-maximum-number-of-cells-that-can-be-profiled-). We make a linear regression from this and implement it into DoubletFinder.
+
+* Please increase the number of cores for this step if have many cells. Finding artificial K-nearest neighbors during the parameter sweep can be computationally expensive. The number of cores should NOT exceed the available resources in your system provided to the pipeline. If you do, then DoubletFinder will likely crash!
+
+##### Results: #####
+
+* Doublet UMAP plot: 
+  - Representing the identified doublets within the preliminary cluster. Often, the doublets are located on the edges or between other cell population.
+  
+* Violin plots:
+  - Representing the scattered distribution of doublets and singlets as a function of gene and transcript counts. Here it is expected that the doublets contain more genes and transcripts when compared to singlets.
+```{r Doubletfinder - Finding the optimal Pk value for doubletfinder, fig.height=4, fig.width=10, echo=FALSE, message=FALSE, results='hide',  include=FALSE}
+#################### Chunk #################### 
+# // This chunk recursively determines the optimal number of pK value for the probabilistic determination of multiplets
+# // pK defines the PC neighborhood size used to compute the proportion of artificial k nearest neighbors for each cell, expressed as a proportion of the merged real-artificial data.
+# // Optimal pK values are always between 0 and 0.3 (0-30%) by default
+# // pN defines the number of generated artificial doublets, expressed as a proportion of the merged real-artificial data. Default is set to 25% (implement user parameter)
+####################       #################### 
+
+# Lets calculate the optimal Pk value for doubletfinder
+for (i in 1:length(x = sample_names)) {
+  sweep.res.list_sobj <- paramSweep(sobj_list[[i]], PCs = pc.dims[[i]], sct = FALSE, num.cores = if (CPU.cores >= 0 & CPU.cores <= 8 & is.na(CPU.cores) == FALSE){
+    CPU.cores = CPU.cores}else{CPU.cores = 1}) # set CPU cores 1 by default, but no higher than 8 if uder defined
+  sweep.stats_sobj <- summarizeSweep(sweep.res.list_sobj, GT = FALSE)
+  bcmvn_sobj <- find.pK(sweep.stats_sobj)
+
+  # select the pK that corresponds to max bcmvn to optimize doublet detection
+  pK <- bcmvn_sobj %>% 
+    dplyr::filter(BCmetric == max(BCmetric)) %>% 
+    dplyr::select(pK) 
+  
+  pK <- as.numeric(as.character(pK[[1]])) # make integer
+  
+  # lets plot to soo the optimal PK value
+  plotttt <- ggplot(bcmvn_sobj, aes(pK, BCmetric, group = 1)) + geom_point() + geom_line()
+  print(plotttt)
+  
+  # Estimate the proportion of doublets in our data and run DoubletFinder
+  clusters <- sobj_list[[i]]@meta.data$seurat_cluster # previous cluster from UMAP
+  doublet.propotions <- modelHomotypic(clusters) 
+  nExp_poi <- round(percent.multiplets[[i]]*nrow(sobj_list[[i]]@meta.data))  ## Assuming 4.8% doublet formation rate 
+  nExp_poi.adj <- round(nExp_poi*(1-doublet.propotions))
+  # Run doubletfinder
+  
+  sobj_list[[i]] <- doubletFinder(sobj_list[[i]], PCs = pc.dims[[i]], 
+                                     pN = 0.25,
+                                     pK = pK, 
+                                     nExp = nExp_poi.adj, 
+                                     reuse.pANN = FALSE, 
+                                     sct = FALSE)
+}
+```
+
+```{r visualize the number of doublets in cluster, fig.height=5, fig.width=6, echo=FALSE}
+#################### Chunk #################### 
+# // This chunk visualized the true identified multiplets in violin plot and UMAP space
+####################       #################### 
+
+########## Function ########## 
+# // This function return a violin and UMAP plot of the identified multiplets by DoubletFinder
+# // Input file must be a vector of Seurat objects that have been used input for DoubletFinder
+show_doublets <- function(sobj) {
+  colnames(sobj@meta.data)[length(sobj@meta.data)] <- as.character(sobj@meta.data[1,1]) # change column name of multiplet channel to sample name
+  multiplet.channel <- colnames(sobj@meta.data)[length(sobj@meta.data)] # column 8 of the seurat object@metadata coresponds to the doublet channel
+  
+  # UMAP plot the doublets and singlets using the original lovain UMAP plot
+  doublet_plot <- DimPlot(sobj, reduction = 'umap', group.by = multiplet.channel, pt.size = 0.05) + 
+    ggtitle(paste("Multiplet Detection: UMAP:", sobj@meta.data[1,1], sep = " "), 
+            subtitle = paste(table(sobj@meta.data[length(sobj@meta.data)])[1], paste(table(sobj@meta.data[length(sobj@meta.data)])[2], "Multiplets"), sep = "/")) + 
+    ylab("UMAP 1") + xlab("UMAP 2") + theme(plot.title = element_text(size = 10))
+  print(doublet_plot)
+  
+  # plot violin of number of genes/UMIs for doublets and singlets
+  v1.1 <- VlnPlot(sobj, features = "nFeature_RNA", group.by = multiplet.channel, pt.size = 0.1) + 
+    theme(plot.title = element_text(size = 10))
+  v1.2 <- VlnPlot(sobj, features = "nCount_RNA", group.by = multiplet.channel, pt.size = 0.1) + 
+    theme(plot.title = element_text(size = 10))
+  print(v1.1)
+  print(v1.2)
+  
+  # show the number of actual doublets in the data
+  print(table(sobj@meta.data[length(sobj@meta.data)]))
+  
+  return()
+}
+# Execute show_doublets function
+doublet_result <- sapply(sobj_list, show_doublets)
+```
+
+#### Final filtering and QC plots ####
+
+##### Results: #####
+
+* In the chuck below, we will do another data filtering by taking out the identified muultiplets in the dataset.
+  - Now you have can finally compare your results and number of cells before and after filtering. It gives you an idea how aggressively you have filtered your data. 
+  - Likewise, you can compare the QC plots to what had before. Do you see any improvement here? 
+  - Remember that you can always change the parameters to your liking an run it again.
+  
+* It is advised to try to annotate you cells using the pre-processed data and see if you find your expected cells (in the right proportion). If you think that you are missing some rare cells that contain few genes/transcripts, then try to use the raw counts matrix as a starting point. This will likely expose those cells that have been filtered out by Cellrangers 500 UMI threshold. By using the raw matrix, the pipeline will automatically remove all cells that have <100 genes. By doing so, we ensure that you do not end up many low quality droplets. Even the rarest cells usually do not contain less than 100 genes anyway. Feel free to disagree and change the parameter to your liking. If you do not change anything, then the threshold is always set at 100 genes. NEVER TOUCH THIS PARAMETER IF YOU AEE WORKING WITH THE FILTERED COUNTS MATRIX! You will always lose cells that contain few genes/transcripts. 
+```{r filter and remove doublets in the data, fig.height=9, fig.width=17, echo=FALSE} 
+#################### Chunk #################### 
+# // This chunk saves the final output count matrix that has been fully processed (filtered), corrected for ambient RNA and removed multiplets
+# // Additionally, the fully processed object will be used the plot all the previous QC plots plots where the user can visually compare the pre vs post filtering
+####################       #################### 
+
+for (i in 1:length(x = sobj_list)) {
+  if (skip.DoubletFinder == "yes" & str_length(skip.DoubletFinder) != 0) { # If we have low complexity data or wrong parameter given, then SoupX will be skipped
+    print("Correction for multiplets will not be carried out")
+    # If there is a directory, then make new one and save Semi filtered matrix 
+    if (dir.exists(file.path(paste(parent_directory, paste(sample_path[i], "/new-outs/counts", sep = ""), sep = "/")))) {
+      write10xCounts(paste(parent_directory, paste(sample_path[i], "/new-outs/counts/SemiFilteredCounts", sep = ""), sep = "/"), sobj_list[[i]]@assays$RNA$counts, version = "3", overwrite = TRUE)
+      } else { # else make directory and save Semi filtered matrix
+        dir.create(file.path(paste(parent_directory, paste(sample_path[i], "/new-outs/counts", sep = ""), sep = "/")), recursive = TRUE)
+        write10xCounts(paste(parent_directory, paste(sample_path[i], "/new-outs/counts/SemiFilteredCounts", sep = ""), sep = "/"), sobj_list[[i]]@assays$RNA$counts, version = "3", overwrite = TRUE)
+      }
+  } else {
+    # filter out the multiplets
+    colnames(sobj_list[[i]]@meta.data)[length(sobj_list[[i]]@meta.data)] <- "multiplets" # Make colnames of multiplet channel universal for all Seurat objects
+    sobj_list[[i]] <- subset(sobj_list[[i]], subset = multiplets == "Singlet") # remove doublets by keeping "singlets"
+    print(sobj_list[i])
+    # Save the final corrected Matrix
+    if (dir.exists(file.path(paste(parent_directory, paste(sample_path[i], "/new-outs/counts", sep = ""), sep = "/")))) {
+      write10xCounts(paste(parent_directory, paste(sample_path[i], "/new-outs/counts/FilteredCounts", sep = ""), sep = "/"), sobj_list[[i]]@assays$RNA$counts, version = "3", overwrite = TRUE)
+      } else {
+        dir.create(file.path(paste(parent_directory, paste(sample_path[i], "/new-outs/counts", sep = ""), sep = "/")), recursive = TRUE)
+        write10xCounts(paste(parent_directory, paste(sample_path[i], "/new-outs/counts/FilteredCounts", sep = ""), sep = "/"), sobj_list[[i]]@assays$RNA$counts, version = "3", overwrite = TRUE)
+      }
+    }
+  }
+
+########## Function ########## 
+# // This function returns QC plots of the pre proccesed (filtered) Seurat object
+# // Returns histogram of cell frequency vs MT, nUMI and nGene
+# // Return a violin plot of cell distribution as a function of MT conc, nUMI, nGene 
+# // Return a scatter plot of cells based on nUMIs vs nGenes (also in Log10 scaled) 
+# // Return a scatter plot of cells based on %MT vs nGenes or nUMIs
+# // Input file must be a vector of Seurat objects that have been pre processed
+get_viol_QC <- function(sobj, feu.up, umi.up, feu.low, umi.low) {
+  sobj <- SetIdent(sobj, value = sobj@meta.data$orig.ident) # change active.ident to orig.ident, as the active.ident has been changed after the Lovain clustering.
+  v1 <- VlnPlot(sobj, features = c("nFeature_RNA", "nCount_RNA", "percent.mt"), ncol = 3, cols = "magenta")
+  
+  as_tibble(sobj[[]], rownames="Cell.Barcode") -> qc.metrics # sobj_list[[1]][[]] shows data.frame of metadata
+  p1 <- qc.metrics %>%
+    arrange(percent.mt) %>%
+    ggplot(aes(nCount_RNA,nFeature_RNA, colour=percent.mt)) + 
+    geom_point() + 
+    scale_colour_gradientn(colours = c('black', 'black', 'red3'), values = c(0, (((max(sobj[["percent.mt"]]$percent.mt) * 95) / 100) / 10), 1)) +
+    geom_smooth(method = "lm", color = "green", size=1) + 
+    ggtitle(paste("POST-FILTERING: nUMIs vs nGenes with percent MT", sobj@meta.data[1,1], sep = " - ")) + 
+    geom_hline(yintercept = 200, linetype="dashed", color = "orange", size=0.7) +
+    geom_hline(yintercept = feu.up, linetype="dashed", color = "yellow", size=0.7) + 
+    geom_hline(yintercept = feu.low, linetype="dashed", color = "yellow", size=0.7) + 
+    geom_vline(xintercept = 550, linetype="dashed", color = "orange", size=0.7) +
+    geom_vline(xintercept = umi.up, linetype="dashed", color = "yellow", size=0.7) +
+    geom_vline(xintercept = umi.low, linetype="dashed", color = "yellow", size=0.7) +
+    ylab("Number of Genes") + 
+    xlab("Number of UMIs (RNA Molecules)") + 
+    theme_bw() + # make filler white
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) # remove raster
+  
+    p1.1 <- qc.metrics %>%
+    arrange(percent.mt) %>%
+    ggplot(aes(log10(nCount_RNA), log10(nFeature_RNA), colour=percent.mt)) + 
+    geom_point() + 
+    scale_colour_gradientn(colours = c('black', 'black', 'red3'), values = c(0, (((max(sobj[["percent.mt"]]$percent.mt) * 95) / 100) / 10), 1)) +
+    geom_smooth(method = "lm", color = "green", size=1) + 
+    ggtitle(paste("POST-FILTERING: Log10 scaled nUMIs vs nGenes with percent MT")) + 
+    geom_hline(yintercept = log10(200), linetype="dashed", color = "orange", size=0.7) +
+    geom_hline(yintercept = log10(feu.up), linetype="dashed", color = "yellow", size=0.7) +
+    geom_hline(yintercept = log10(feu.low), linetype="dashed", color = "yellow", size=0.7) + 
+    geom_vline(xintercept = log10(550), linetype="dashed", color = "orange", size=0.7) +
+    geom_vline(xintercept = log10(umi.up), linetype="dashed", color = "yellow", size=0.7) +
+    geom_vline(xintercept = log10(umi.low), linetype="dashed", color = "yellow", size=0.7) +
+    ylab("Log10 (Number of Genes)") + 
+    xlab("Log10 (Number of UMIs)") + 
+    theme_bw() + # make filler white
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())  # remove raster
+  
+    h1 <- hist(sobj[["percent.mt"]]$percent.mt, breaks = 30, xlab = "Percentage Mitochondrial Genes (%)", ylab = "Frequency (cells)", 
+             main = paste("POST-FILTERING: QC MT", sobj@meta.data[1,1], sep = " - "), 
+             col = "white", labels = TRUE, plot = TRUE)
+    abline(v = 10, col="red", lwd=3, lty=2)
+    abline(v = 5, col="orange", lwd=3, lty=2)
+    # visualize number of genes in cells
+    h2 <- hist(sobj[["nFeature_RNA"]]$nFeature_RNA, breaks = 30, xlab = "Number of genes", ylab = "Frequency (cells)", 
+             main = paste("POST-FILTERING: QC number of genes", sobj@meta.data[1,1], sep = " - "), 
+             col = "white", labels = TRUE, plot = TRUE)
+    abline(v = 200, col="red", lwd=3, lty=2)
+    # visualize number of UMIs (molecules) in cells
+    h3 <- hist(sobj[["nCount_RNA"]]$nCount_RNA, breaks = 30, xlab = "Number of UMIs (RNA molecules)", ylab = "Frequency (cells)", 
+             main = paste("POST-FILTERING: QC number of UMIs", sobj@meta.data[1,1], sep = " - "), 
+             col = "white", labels = TRUE, plot = TRUE)
+    abline(v = 500, col="red", lwd=3, lty=2)
+    
+    f.scat.processed <- FeatureScatter(sobj, feature1 = "nFeature_RNA", feature2 = "percent.mt", cols = "black") + 
+    ggtitle(paste("POST-FILTERING: Percent-MT vs nGenes", sobj@meta.data[1,1], sep = " - ")) + 
+    geom_hline(yintercept = 10, linetype="dashed", color = "red", size=1) +
+    geom_hline(yintercept = 7.5, linetype="dashed", color = "orange", size=1) + 
+    ylab("Percent Mtiochondrial Genes (%)") + 
+    xlab("Number of Genes") + NoLegend() + theme(plot.title = element_text(size = 15))
+    
+    f.scat.processed2 <- FeatureScatter(sobj, feature1 = "nCount_RNA", feature2 = "percent.mt", cols = "black") + 
+    ggtitle(paste("POST-FILTERING: Percent-MT vs nUMIs")) + 
+    geom_hline(yintercept = 10, linetype="dashed", color = "red", size=1) +
+    geom_hline(yintercept = 7.5, linetype="dashed", color = "orange", size=1) + 
+    ylab("Percent Mtiochondrial Genes (%)") + 
+    xlab("Number of UMIs (RNA Molecules)") + NoLegend() + theme(plot.title = element_text(size = 15))
+    
+    
+    sobj$log10GenesPerUMI <- log10(sobj$nFeature_RNA) / log10(sobj$nCount_RNA)
+  # Visualize the overall complexity of the gene expression by visualizing the genes detected per UMI
+  p1.2 <- sobj@meta.data %>%
+  	ggplot(aes(log10GenesPerUMI)) +
+  	geom_density(alpha = 1, color = "orange", size=1.5) +
+  	theme_classic() +
+  	geom_vline(xintercept = 0.8, linetype="dashed", color = "red", size=1) +
+    ggtitle(paste("Complexity Plot:", sobj@meta.data[1,1], sep = " ")) + 
+    ylab("Density") + 
+    xlab("Log10 Genes/UMI (Genes per UMI)")
+  
+  # Let take a closer look at the complexity of the data and driven by what gene. 
+  # Calculate calculate the log10(nFeature_RNA) / log10(nCount_RNA)) and put in the qc.metric
+  qc.metrics %>%
+  dplyr::mutate(complexity=log10(nFeature_RNA) / log10(nCount_RNA))  -> qc.metrics
+  # Make linear models of log10(nFeautures) vs Log10(nUMIs) and put in put in complexity.lm
+  # Here, we calculate the difference from the observed value to the expected
+  lm(log10(qc.metrics$nFeature_RNA)~log10(qc.metrics$nCount_RNA)) -> complexity.lm
+  # Calculate the complexity from the middle line of the linear model
+  # We will use this for the color scale of the graph as well.
+  qc.metrics %>%
+  dplyr::mutate(complexity_diff = log10(nFeature_RNA) - ((log10(qc.metrics$nCount_RNA)*complexity.lm$coefficients[2])+complexity.lm$coefficients[1])
+  ) -> qc.metrics
+  # Find the delta difference for the graph
+  min(c(max(qc.metrics$complexity_diff),0-min(qc.metrics$complexity_diff))) -> complexity_scale
+
+  # Here we visualize the the data complexity (cells) based on the calculations above
+  p1.3 <- qc.metrics %>% 
+  dplyr::mutate(complexity_diff=replace(complexity_diff,complexity_diff< -0.5,-0.5)) %>%
+  ggplot(aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=complexity_diff)) +
+  geom_point() +
+  geom_abline(slope=complexity.lm$coefficients[2], intercept = complexity.lm$coefficients[1]) +
+  scale_colour_gradient2(low="blue2",mid="grey",high="red2") +
+  ggtitle(paste("Complexity: Log10 - nUMIs vs nGenes", sobj@meta.data[1,1], sep = " - ")) + 
+  ylab("Log10 (Number of Genes)") + 
+  xlab("Log10 (Number of UMIs)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+
+  # Here we visualize the density plot of the cells from the middle of the linear graph from P1.3
+  p1.4 <- qc.metrics %>% ggplot(aes(x=complexity_diff)) + 
+  geom_density(fill="yellow") +
+  ggtitle(paste("Residual vs Density")) + 
+  ylab("Density") + 
+  xlab("Complexity Difference (Residuals)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  
+  # Now lets which genes are actually driving the low complexity cells in the data
+  # For this, we first calculate the percentage of largest genes.
+  # Find the cells with largest counts
+  qc.metrics %>% mutate(largest_count = apply(sobj@assays$RNA@layers$counts, 2, max)) -> qc.metrics # "2" is to return max columns values
+  # find the index of the cell with largest counts
+  qc.metrics %>% mutate(largest_index = apply(sobj@assays$RNA@layers$counts, 2, which.max)) -> qc.metrics
+  # Use the index and get the gene name that accounts for the largest counts per cell
+  qc.metrics %>% mutate(largest_gene = rownames(sobj)[largest_index]) -> qc.metrics
+  # Now calculate the percentage relative to the total counts in the data
+  qc.metrics %>% mutate(percent.Largest.Gene =  100 * largest_count / nCount_RNA) -> qc.metrics
+  
+  # Visualize the complexity explained by percentage of largest genes
+  p1.5 <- qc.metrics %>% ggplot(aes(x=complexity_diff, y=percent.Largest.Gene)) + 
+    geom_point() +
+    ggtitle(paste("Residuals vs Percentage Largest Genes")) + 
+    ylab("Percentage Largest Gene (%)") + 
+    xlab("Complexity Difference (Residuals)") + 
+    theme_bw() + 
+    theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  
+  # Sort the percentage largest genes 
+  qc.metrics %>%
+  dplyr::group_by(largest_gene) %>% dplyr::arrange(desc(percent.Largest.Gene)) -> largest_gene_list
+  # Filter out the genes >5% counts 
+  largest_gene_list %>%
+  dplyr::filter(percent.Largest.Gene > 0.5) %>% # filter exists in other packages, use dplyr:: to fix
+  dplyr::pull(largest_gene) -> largest_genes_to_plot
+  largest_genes_to_plot <- unique(largest_genes_to_plot)[1:8] # Remove duplicated gene names and take up to 10 genes
+  
+  # Plot the linear complexity model that explain the deviation by the largest genes
+  p1.6 <- qc.metrics %>%
+  dplyr::filter(largest_gene %in% largest_genes_to_plot) %>%
+  dplyr::mutate(largest_gene=factor(largest_gene, levels=largest_genes_to_plot)) %>%
+  dplyr::arrange(largest_gene) %>%
+  ggplot(aes(x=log10(nCount_RNA), y=log10(nFeature_RNA), colour=largest_gene)) +
+  geom_point(size=1.5) +
+  geom_abline(slope=complexity.lm$coefficients[2], intercept = complexity.lm$coefficients[1]) + #import the line form linear model from before
+  geom_hline(yintercept = log10(200), linetype="dashed", color = "orange", size=0.7) +
+  geom_hline(yintercept = log10(feu.up), linetype="dashed", color = "yellow", size=0.7) +
+  geom_hline(yintercept = log10(feu.low), linetype="dashed", color = "yellow", size=0.7) + 
+  geom_vline(xintercept = log10(550), linetype="dashed", color = "orange", size=0.7) +
+  geom_vline(xintercept = log10(umi.up), linetype="dashed", color = "yellow", size=0.7) +
+  geom_vline(xintercept = log10(umi.low), linetype="dashed", color = "yellow", size=0.7) +
+  scale_colour_manual(values=c("grey",RColorBrewer::brewer.pal(9,"Set1"))) +
+  ggtitle(paste("Complexity by Largest Gene", sobj@meta.data[1,1], sep = " - ")) + 
+  ylab("Log10 (Number of Genes)") + 
+  xlab("Log10 (Number of UMIs)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank()) 
+    
+  # Now plot a scatter of the cells with the residuals on the x-axis and percentage largest gene in the y-axis
+  p1.7 <- qc.metrics %>%
+  dplyr::filter(largest_gene %in% largest_genes_to_plot) %>%
+  dplyr::mutate(largest_gene=factor(largest_gene, levels=largest_genes_to_plot)) %>%
+  dplyr::arrange(largest_gene) %>%
+  ggplot(aes(x=complexity_diff, y=percent.Largest.Gene, colour=largest_gene)) +
+  geom_point(size=1.5) +
+  scale_colour_manual(values=c("grey",RColorBrewer::brewer.pal(9,"Set1"))) + 
+  ggtitle(paste("Residual vs Percentage Largest Genes")) + 
+  ylab("Percentage Largest Gene (%)") + 
+  xlab("Complexity Difference (Residuals)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+  
+  # Same as above, but now with percentage.MT as gradient
+  p1.8 <- qc.metrics %>%
+  arrange(percent.mt) %>%
+  ggplot(aes(x=complexity_diff, y=percent.Largest.Gene, colour=percent.mt)) +
+  geom_point() +
+  scale_colour_gradientn(colours = c('black', 'black', 'red3'), values = c(0, (((max(sobj[["percent.mt"]]$percent.mt) * 95) / 100) / 10), 1)) +
+  ggtitle(paste("Residuals vs Percentage Largest Genes + MT %")) + 
+  ylab("Percentage Largest Gene (%)") + 
+  xlab("Complexity Difference (Residuals)") + 
+  theme_bw() + 
+  theme(panel.grid.major = element_blank(), panel.grid.minor = element_blank())
+    
+  # Print the plots
+  print(v1)
+  print(f.scat.processed + f.scat.processed2)
+  print(p1 + p1.1)
+  print(p1.2)
+  print(p1.3 + p1.4 + p1.5)
+  print(p1.6 + p1.7 + p1.8)
+  
+  return()
+}
+
+# Apply function get_viol_QC
+#viol <- sapply(sobj_list, get_viol_QC)
+viol <- mapply(get_viol_QC, sobj_list, feature.quantile.abline, UMI.quantile.abline, feature.quantile.abline.low, UMI.quantile.abline.low) # mapply for multiple variables as vectors
+```

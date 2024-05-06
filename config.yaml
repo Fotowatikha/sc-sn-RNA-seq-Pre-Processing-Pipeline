@@ -1,0 +1,170 @@
+##### REQUIREMENTS FOR PIPELINE INPUT/OUTPUT #####:
+
+# ***REQUIRED*** 
+# Example:  out_directory: "/path/to/output directory" 
+# All the cellranger and QC results will be stored here.
+# Although this parameter is required, the pipeline will use your current directory in case you forget to fill it in.
+out_directory: "" 
+
+# ***REQUIRED*** 
+# Example:  reads_directory: "/path/to/sequnecing_reads"
+# This is the directory to your raw reads.
+# Only the path, no .gz files!
+reads_directory: ""  
+
+# ***SEMI-REQUIRED*** 
+# Example1:  sample_names: "/path/to/samples"  (only the parent directory to the samples, so do not include the folders that that are the samples)
+# If you downloaded samples (counts matrices) from open source databases, but only want to run QC and pre-processing, then you must specify the path to those sample folders
+# Make sure sure the the matrix folder in you sample folder contains either the the charecter "raw" or "filtered".
+# If this is your first run of Cellranger Counts, then you are allowed to skip this, and the code will automatically pick the folder names based on the name of your raw reads.
+# (IMPORTANT NOTE: if specify your own sample(s), make sure NOT to specify "out_directory" parameter above).
+sample_names: "" 
+
+
+
+
+##### REQUIREMENTS FOR EDITING .GTF, MAKING NEW REFERENCE AND RUNNING CELLRANGER COUNTS #####:
+
+# ***SEMI-REQUIRED*** 
+# Example:  cellranger_directory: "/path/to/cellranger-x.x.x folder"
+# This directory contains the installed cellranger software
+cellranger_directory: ""  
+
+# ***SEMI-REQUIRED*** 
+# Example1:  transcriptome: "/path/to/transcriptome-folder"  (if you alreade have one)
+# Example2:  transcriptome: ""  (leave it empty if you want the pipeline to make one for you with Cellranger mkref)
+# If you don't make your own reference using Cellranger mkref, but download pre-exisitng transcriptomes from 10X website, then you can skip this.
+# If also previously made one with Cellranger mkref, then you are allowed to specify the path to that folder.
+# If you skip this, then mkref will run instead so that a new reference can be made (if you choose to do so).
+# If import your own custom transcriptome, then make sure it is compatible with 10X software (the pipleine will not do this for you).
+transcriptome_directory: "" 
+
+# ***SEMI-REQUIRED*** 
+# Example:  make_new_ref: "yes"  (only use "yes" if you want make new reference, leave it empty if you don't want a new transcriptome).
+# This parameter will be used in case you want a new transcriptome for the Cellranger tools and run Cellranger counts.
+# You can skip if you dont want to run any of the Cellranger tools or make new reference transcriptome.
+# (If you still want to run Cellranger counts without making a new reference, then make sure you specify your own transcriptome or from previous runs, see above!!!).
+make_new_ref: ""
+
+# ***SEMI-REQUIRED*** 
+# Example:  edit_gtf "yes"  (only use "yes" if you want to edit the .gtf file, otherwise it leave it empty).
+# This parameter will be used in case you want to edit the .gtf file before you want a new reference and run Cellranger counts.
+# You can skip if you dont want to run Cellranger mkgtf. I such case, the original .gtf file will be used for Celleanger mkref.
+edit_gtf: ""
+
+# ***SEMI-REQUIRED*** 
+# Example:  gtf_directory: "/path/to/gtf-folder" 
+# Only the path, no .gtf files!
+# This parameter will be used in case you want a new transcriptome for the Cellranger mkref or edit it with Cellranger mkgtf.
+# You can skip if you dont want to run any of the Cellranger tools (e.g. edit the .gtf file, make new reference or run Cellranger counts).
+gtf_directory: ""
+
+# ***SEMI-REQUIRED*** 
+# Example:  fasta_directory: "/path/to/fasta-folder" 
+# Only the path, no .fa files!
+# This parameter will be used in case you want a new transcriptome for the Cellranger mkref.
+# You can skip if you dont want to run any of the Cellranger tools (e.g. edit the .gtf file, make new reference or run Cellranger counts).
+# (0) IMPORTANT NOTE: by always including the fasta directory, the pipeline 
+# (1) will extract the correct name of specie to search for MT genes in Ensembl format.
+# (2) This ensures that you dont make a mistake by typing the wrong name.
+# (3) You can leave this empty and fill the in the name of specie yourself further down below.
+# (4) The fasta file will is required for Cellranger mkref, and extracting the correct Ensembl name of the specie isjust an extra...
+fasta_directory: ""
+
+# ***SEMI-REQUIRED*** 
+# Example1:  gene_biotype: "gene_biotype:protein_coding"  (to only include genes with poly-A entries, the name protein_coding is misleading)
+# Example2:  gene_biotype: "gene_biotype:lncRNA biotype:antisense gene_biotype:protein_coding"  (for multiple. separated by whitespace!)
+# Example3:  gene_biotype: ""  (leave it empty if you want everything)
+# (0) This parameter will be used in case you want edit the .gtf to filter a specfic gene biotype.
+# (1) Since the expression assay captures transcripts by the poly-A and 3' ends, 
+# (2) most reads will align towards that region, including the UTR. If the 
+# (3) UTR sequence between (multiple) transcripts happens to be similar, the gene 
+# (4) counts at an unwanted locus could become inflated, while missing the true 
+# (5) counts for the relevant genes. Taking into account that GTF files often 
+# (6) contain entries for non-polyA transcripts, there is a minor chance that 
+# (7) these transcripts (and its UTRs) may overlap with actual protein-coding genes. 
+# (7) Thus, by default, the GTF file will be manipulated to only include genes that have polyA entries.
+# For more atributes, visit: https://www.10xgenomics.com/support/software/cell-ranger/latest/analysis/inputs/cr-3p-references
+gene_biotype: "gene_biotype:protein_coding"
+
+# ***SEMI-REQUIRED*** 
+# Example:  cellranger_counts_options: "--include-introns=false" (or more options separated by whitespace)
+# You can also add multiple options to your liking (separated by a whitespace)
+# For more options, visit: https://www.10xgenomics.com/support/software/cell-ranger/latest/tutorials/cr-tutorial-ct
+cellranger_counts_options: ""
+
+
+ 
+
+##### REQUIREMENTS FOR QC AND PRE-PROCESSING #####:
+
+##### PLEASE READ THE REPORT or README VERY CAREFULLY WHEN ADJUSTING THE VALUES BELOW.
+##### THE DEAULT PARAMETERS HAVE ALREADY BEEN PICKED CAREFULLY FOR YOU. ONLY CHANGE IF YOU KNOW WHAT YOU ARE DOING.
+
+# ***SEMI-REQUIRED*** 
+# Example:  animal: "" 
+# This will be used for AnnotationHub's query() function to get MT genes for given species
+# Animal names must be based on Ensembl format, so for humans it would be "Homo sapiens"
+# Do NOT make a mistake here, or get ready for some sleepless nights...
+# If you specify a path to the fasta file, the correct name will be picked for you.
+# The path to the faste file can be fille din above in the "fasta_directory" parameter.
+animal: ""
+
+# ***OPTIONAL*** 
+# Example1:  use.local.cache.MT: "yes" (leaving it empty equals "no")
+# This option allows you to use previously downloaded MT data of your specie  from the local Conda caches.
+# This is usefull if Annotationhub or Ensembl (Biomart) is down.
+use.local.cache.MT: "" 
+
+# ***OPTIONAL*** 
+# Example1:  use.raw.only: "yes" (leaving it empty equals "no")
+# This option allows you to work with the raw count matrix instead of the fitlered one
+use.raw.only: "" 
+
+# ***NOT RECOMMENDED*** 
+# Example1:  min.cell: "" (removes genes that are not expressed in atleast 5 cells, or leave it empty if you dont want to use it).
+# (DONT EVEN THINK ABOUT THIS!!! If you do ambient RNA correction will be skipped).
+min.cell: "" 
+
+# ***OPTIONAL*** 
+# Example1:  min.feature: "80" (removes cells that do not express at least 80 genes, or leave empty if you dont want to use it)
+# This parameter is automatically set at 100 if you choose to work with the raw matrix only. 
+# You can overwirte the 100 treshold if you change this parameter.
+min.feature: "" 
+
+# ***OPTIONAL*** 
+# Example1:  nfeatures: "2000" (selects 2000 highly variable genes to be passed to unsupervised clustering).
+# Leaving it empty uses a default of 2500.
+nfeatures: "" 
+
+# ***OPTIONAL*** 
+# Example1:  umap.resolution: "1.0" (Louvain community joining will result in more clusters, when compared to default of 0.8).
+umap.resolution: ""
+  
+# ***OPTIONAL*** 
+# Example1:  low.complexity: "yes" (skips ambient RNA correction, leave it empty equals "no").
+# Only use this parameter if you have low-complexity data.
+low.complexity: "" 
+n.highly_affected.genes: "" # select number of most highly affected genes to be shown.
+n.markers.genes: "" # select number of most highly affected markers to be shown .
+
+
+# ***OPTIONAL*** 
+# These parameters will result in the filtering of cells based on a minimum or maximum number of genes and UMIs (transcripts/RNA molecules).
+# These parameters will be applied during the extensive filter step.
+featureLOW: ""  # remove cells that express a minimum given number of genes
+countLOW: ""    # remove cells that contain a minimum given number of RNA molecules
+featureHIGH: "" # remove cells that express a maximum given number of genes
+countHIGH: ""   # remove cells that contain a maximum given number of RNA molecules
+mt.Con: ""      # removes cell with MT percentage aboce the given value
+# Same as above, but by quantile (use any number between 0 and 100)
+feature.quantile.low: "" 
+UMI.quantile.low: ""
+feature.quantile.high: ""
+UMI.quantile.high: ""
+
+# ***OPTIONAL*** 
+# Example1:  skip.DoubletFinder: "yes" (skips the filtering of doublets after detection)
+# Doublet detection will always run, only filtering will be skipped if you choose to.
+skip.DoubletFinder: "" 
+CPU.cores: "4" # number of cores for the parameter-sweep during the doublet detection.
