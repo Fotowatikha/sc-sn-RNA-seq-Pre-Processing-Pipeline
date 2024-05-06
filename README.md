@@ -327,6 +327,7 @@ You are still allowed to specify a path to a FASTA file. In such case, the name 
 # Example:  out_directory: "/path/to/output directory" 
 # All the cellranger and QC results will be stored here.
 # Although this parameter is required, the pipeline will use your current directory in case you forget to fill it in.
+# DO NOT specify the "out_directory" if you only want to run the "QC AND PRE-PROCESSING rule" (see further below).
 out_directory: "" 
 
 # ***REQUIRED*** 
@@ -426,16 +427,22 @@ cellranger_counts_options: ""
 
 # ***SEMI-REQUIRED*** 
 # Example:  animal: "Sus scrofa" 
-# This will be used for AnnotationHub's query() function to get MT genes for given species.
-# Animal names must be based on Ensembl format, so for humans it would be "Homo sapiens".
+# This will be used for AnnotationHub's query() function to get MT genes for given species
+# Animal names must be based on Ensembl format, so for humans it would be "Homo sapiens"
 # Do NOT make a mistake here, or get ready for some sleepless nights...
 # If you specify a path to the fasta file, the correct name will be picked for you.
 # The path to the faste file can be fille din above in the "fasta_directory" parameter.
 animal: ""
 
 # ***OPTIONAL*** 
-# Example1:  use.raw.only: "yes" (leaving it empty equals "no").
-# This option allows you to work with the raw count matrix instead of the fitlered one.
+# Example1:  use.local.cache.MT: "yes" (leaving it empty equals "no")
+# This option allows you to use previously downloaded MT data of your specie  from the local Conda caches.
+# This is usefull if Annotationhub or Ensembl (Biomart) is down.
+use.local.cache.MT: "" 
+
+# ***OPTIONAL*** 
+# Example1:  use.raw.only: "yes" (leaving it empty equals "no")
+# This option allows you to work with the raw count matrix instead of the fitlered one
 use.raw.only: "" 
 
 # ***NOT RECOMMENDED*** 
@@ -463,28 +470,28 @@ umap.resolution: ""
 # Only use this parameter if you have low-complexity data.
 low.complexity: "" 
 n.highly_affected.genes: "" # select number of most highly affected genes to be shown.
-n.markers.genes: "" # select number of most highly affected markers to be shown.
+n.markers.genes: "" # select number of most highly affected markers to be shown .
 
 
 # ***OPTIONAL*** 
 # These parameters will result in the filtering of cells based on a minimum or maximum number of genes and UMIs (transcripts/RNA molecules).
 # These parameters will be applied during the extensive filter step.
-featureLOW: ""  # remove cells that express a minimum given number of genes.
-countLOW: ""    # remove cells that contain a minimum given number of RNA molecules.
-featureHIGH: "" # remove cells that express a maximum given number of genes.
-countHIGH: ""   # remove cells that contain a maximum given number of RNA molecules.
-mt.Con: ""      # removes cell with MT percentage aboce the given value.
-# Same as above, but by quantile (use any number between 0 and 100).
+featureLOW: ""  # remove cells that express a minimum given number of genes
+countLOW: ""    # remove cells that contain a minimum given number of RNA molecules
+featureHIGH: "" # remove cells that express a maximum given number of genes
+countHIGH: ""   # remove cells that contain a maximum given number of RNA molecules
+mt.Con: ""      # removes cell with MT percentage aboce the given value
+# Same as above, but by quantile (use any number between 0 and 100)
 feature.quantile.low: "" 
 UMI.quantile.low: ""
 feature.quantile.high: ""
 UMI.quantile.high: ""
 
 # ***OPTIONAL*** 
-# Example1:  skip.DoubletFinder: "yes" (skips the filtering of doublets after detection).
+# Example1:  skip.DoubletFinder: "yes" (skips the filtering of doublets after detection)
 # Doublet detection will always run, only filtering will be skipped if you choose to.
 skip.DoubletFinder: "" 
-CPU.cores: "" # number of cores for the parameter-sweep during the doublet detection.
+CPU.cores: "4" # number of cores for the parameter-sweep during the doublet detection.
 ```
 
 ## Locate your resuls
