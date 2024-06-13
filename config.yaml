@@ -168,4 +168,4 @@ UMI.quantile.high: ""
 # Example1:  skip.DoubletFinder: "yes" (skips the filtering of doublets after detection)
 # Doublet detection will always run, only filtering will be skipped if you choose to.
 skip.DoubletFinder: "" 
-CPU.cores: "4" # number of cores for the parameter-sweep during the doublet detection.
+CPU.cores: "" # number of cores for the parameter-sweep during the doublet detection.
