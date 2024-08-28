@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this pipeline, yuu dont have to cite anything. Just enjoy it"
+authors:
+  - family-names: Fotowatikha
+    given-names: Hamid
+title: "MyProject: Single Cell/Nuclei Pre-Processing Pipeline for Single Cell Genomic Data"
+version: "1.0"
+url: "https://github.com/Fotowatikha/sc-sn-RNA-seq-Pre-Processing-Pipeline"
+date-released: 2024-03-31
