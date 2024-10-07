@@ -85,7 +85,7 @@ wget -O cellranger-8.0.0.tar.gz "https://cf.10xgenomics.com/releases/cell-exp/ce
 ```
 Unzip it using:
 ```sh
-gzip -d cellranger-8.0.0.tar.gz
+tar -xzvf cellranger-8.0.0.tar.gz
 ```
 The files will no go to a new directory named **cellranger-8.0.0**, that contains all the CellRanger dependencies.
 
