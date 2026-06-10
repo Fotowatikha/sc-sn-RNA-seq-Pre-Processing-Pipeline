@@ -1,1 +1,0 @@
-For slurm logs (delete this file in when downloading everything)
