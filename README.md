@@ -4,6 +4,11 @@ Now considering that the emergence of scRNA-seq techniques provides the framewor
 
 **Here, I will provide you with all the necessary information on how to use the single-cell/nuclei pre-processing pipeline, either in your own environment or on the HPC cluster.**
 
+## New features
+
+New features have been added since original release. These will be documented soon.
+You can continue to use the pipeline as you did before.
+
 ## Uncommon issues
 
 There are currently some issues with filtering based on **featureLOW**, **countLOW**, **featureHIGH**, and **countHIGH**. This will be fixed in the month of April 2025
