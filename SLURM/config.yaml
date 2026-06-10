@@ -1,0 +1,9 @@
+executor: cluster-generic
+cluster-generic-submit-cmd: "sbatch --time 24:00:00 --mem 64000 --cpus-per-task 18 --job-name={rule} --output=SLURM_LOGS/{rule}_%j.out --error=SLURM_LOGS/{rule}_%j.err"
+
+jobs: 25 # Generally a sensible default is slightly below the maximum number of jobs you are allowed to have submitted at a time on your system.
+latency-wait: 180 # Larger files likely need more latency, but 180 seconds is generally a good start.
+use-conda: True
+
+#software-deployment-method:
+#  - conda
